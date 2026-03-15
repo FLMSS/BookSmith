@@ -1,3 +1,84 @@
+/* --- Glow smoothing and anti-banding improvements --- */
+.book-smith-mini-focus-ring {
+    stroke: #ff7a1a;
+    transition: stroke-dashoffset 0.25s ease;
+    will-change: filter;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    stroke-linecap: round;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode .book-smith-mini-focus-ring {
+    stroke: #ff7a1a;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress:not(.is-goal-reached) .book-smith-mini-focus-ring {
+    animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
+    filter:
+        blur(0.2px)
+        drop-shadow(0 0 4px rgba(255,106,0,0.6))
+        drop-shadow(0 0 10px rgba(255,106,0,0.35));
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress.is-goal-optional .book-smith-mini-focus-ring {
+    stroke: rgba(255, 122, 26, 0.68);
+    animation: book-smith-goal-neon-breathe-soft var(--bs-goal-soft-pulse-duration) ease-in-out infinite;
+    filter:
+        blur(0.2px)
+        drop-shadow(0 0 4px rgba(255,106,0,0.4))
+        drop-shadow(0 0 8px rgba(255,106,0,0.18));
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring {
+    stroke: #ff7a1a;
+    animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
+    filter:
+        blur(0.2px)
+        drop-shadow(0 0 4px rgba(255,106,0,0.6))
+        drop-shadow(0 0 10px rgba(255,106,0,0.35));
+}
+
+.book-smith-mini-focus-trigger.is-goal-complete-pulse .book-smith-mini-focus-ring {
+    animation: book-smith-goal-complete-pulse 0.7s cubic-bezier(0.2, 0.85, 0.25, 1);
+    filter:
+        blur(0.2px)
+        drop-shadow(0 0 4px rgba(255,106,0,0.6))
+        drop-shadow(0 0 14px rgba(255,106,0,0.25));
+}
+
+@keyframes book-smith-goal-complete-pulse {
+    0% {
+        transform: scale(0.96);
+        filter:
+            blur(0.2px)
+            drop-shadow(0 0 4px rgba(255,106,0,0.6))
+            drop-shadow(0 0 0px rgba(255,106,0,0.0));
+    }
+    40% {
+        transform: scale(1.04);
+        filter:
+            blur(0.2px)
+            drop-shadow(0 0 4px rgba(255,106,0,0.6))
+            drop-shadow(0 0 14px rgba(255,106,0,0.25));
+    }
+    70% {
+        transform: scale(1.02);
+        filter:
+            blur(0.2px)
+            drop-shadow(0 0 4px rgba(255,106,0,0.6))
+            drop-shadow(0 0 8px rgba(255,106,0,0.18));
+    }
+    100% {
+        transform: scale(1);
+        filter:
+            blur(0.2px)
+            drop-shadow(0 0 4px rgba(255,106,0,0.6))
+            drop-shadow(0 0 4px rgba(255,106,0,0.18));
+    }
+}
+
+/* --- End glow smoothing --- */
+
 .book-smith-mini-focus-trigger {
     position: relative;
     width: 24px;
@@ -89,7 +170,7 @@
 }
 
 .book-smith-mini-focus-ring {
-    stroke: #7c59f0;
+    stroke: #ff7a1a;
     transition: stroke-dashoffset 0.25s ease;
 }
 
