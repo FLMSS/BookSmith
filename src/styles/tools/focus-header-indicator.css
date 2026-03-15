@@ -2,10 +2,10 @@
 .book-smith-mini-focus-ring {
     stroke: #ff7a1a;
     transition: stroke-dashoffset 0.25s ease;
-    will-change: filter;
-    backface-visibility: hidden;
-    transform: translateZ(0);
+    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
     stroke-linecap: round;
+    stroke-linejoin: round;
+    shape-rendering: geometricPrecision;
 }
 
 .book-smith-mini-focus-trigger.is-goal-mode .book-smith-mini-focus-ring {
@@ -14,36 +14,24 @@
 
 .book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress:not(.is-goal-reached) .book-smith-mini-focus-ring {
     animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
-    filter:
-        blur(0.2px)
-        drop-shadow(0 0 4px rgba(255,106,0,0.6))
-        drop-shadow(0 0 10px rgba(255,106,0,0.35));
+    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
 }
 
 .book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress.is-goal-optional .book-smith-mini-focus-ring {
     stroke: rgba(255, 122, 26, 0.68);
     animation: book-smith-goal-neon-breathe-soft var(--bs-goal-soft-pulse-duration) ease-in-out infinite;
-    filter:
-        blur(0.2px)
-        drop-shadow(0 0 4px rgba(255,106,0,0.4))
-        drop-shadow(0 0 8px rgba(255,106,0,0.18));
+    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
 }
 
 .book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring {
     stroke: #ff7a1a;
     animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
-    filter:
-        blur(0.2px)
-        drop-shadow(0 0 4px rgba(255,106,0,0.6))
-        drop-shadow(0 0 10px rgba(255,106,0,0.35));
+    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
 }
 
 .book-smith-mini-focus-trigger.is-goal-complete-pulse .book-smith-mini-focus-ring {
     animation: book-smith-goal-complete-pulse 0.7s cubic-bezier(0.2, 0.85, 0.25, 1);
-    filter:
-        blur(0.2px)
-        drop-shadow(0 0 4px rgba(255,106,0,0.6))
-        drop-shadow(0 0 14px rgba(255,106,0,0.25));
+    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
 }
 
 @keyframes book-smith-goal-complete-pulse {
@@ -175,17 +163,11 @@
 }
 
 .book-smith-mini-focus-ring-flow {
-    stroke: transparent;
-    stroke-width: 1.25;
-    opacity: 0;
-    pointer-events: none;
+    display: none !important;
 }
 
 .book-smith-mini-focus-ring-flow-2 {
-    stroke: transparent;
-    stroke-width: 1.1;
-    opacity: 0;
-    pointer-events: none;
+    display: none !important;
 }
 
 .book-smith-mini-focus-trigger.is-goal-mode .book-smith-mini-focus-bg {
