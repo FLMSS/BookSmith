@@ -1,0 +1,198 @@
+.modal.book-smith-switch-book-modal-shell {
+    width: min(600px, calc(100vw - 40px));
+    max-width: 600px;
+}
+
+.modal.book-smith-switch-book-modal-shell.book-smith-switch-book-modal-initializing {
+    opacity: 0;
+}
+
+.book-smith-switch-book-modal {
+    width: 100%;
+}
+
+.book-smith-switch-book-divider {
+    margin: 20px 0;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+}
+
+.book-smith-search-container {
+    margin-bottom: 20px;
+    padding: 0 10px;
+}
+
+.book-smith-folder-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 10px 10px;
+}
+
+.book-smith-folder-new-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.book-smith-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.book-smith-search-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.book-smith-book-list {
+    height: 400px;
+    overflow-y: auto;
+    padding: 0 10px;
+}
+
+.book-selection-loading {
+    color: var(--text-muted);
+    padding: 14px 10px;
+}
+
+.book-smith-book-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.book-smith-book-list::-webkit-scrollbar-track {
+    background: var(--background-primary-alt);
+    border-radius: 3px;
+}
+
+.book-smith-book-list::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+.book-smith-book-list::-webkit-scrollbar-thumb:hover {
+    background: var(--interactive-accent);
+}
+
+.book-smith-folder-section {
+    margin-bottom: 10px;
+}
+
+.book-smith-folder-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.book-smith-folder-toggle {
+    flex: 1;
+    text-align: left;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    padding: 6px 10px;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.book-smith-folder-pin {
+    width: 14px;
+    height: 14px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-muted);
+    line-height: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.45;
+    padding: 0;
+    position: relative;
+    transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
+}
+
+.book-smith-folder-pin::before {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 3px;
+    border: 1.2px solid currentColor;
+    border-radius: 2px;
+    top: 2px;
+    left: 3px;
+}
+
+.book-smith-folder-pin::after {
+    content: '';
+    position: absolute;
+    width: 1.2px;
+    height: 7px;
+    background: currentColor;
+    top: 5px;
+    left: 6px;
+}
+
+.book-smith-folder-pin.is-pinned {
+    opacity: 1;
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+}
+
+.book-smith-folder-pin:hover {
+    opacity: 1;
+    color: var(--text-normal);
+    border-color: var(--background-modifier-border);
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-folder-pin.is-pinned:hover {
+    border-color: var(--interactive-accent-hover);
+    background: var(--interactive-accent-hover);
+}
+
+.book-smith-folder-toggle.is-drop-target {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}
+
+.book-smith-book-dragging {
+    opacity: 0.55;
+}
+
+.book-smith-folder-empty {
+    color: var(--text-muted);
+    padding: 10px;
+}
+
+.book-smith-folder-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.book-smith-folder-select-option {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    padding: 6px 10px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.book-smith-folder-select-option.is-active {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}

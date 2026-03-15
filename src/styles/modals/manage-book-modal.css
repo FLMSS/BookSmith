@@ -1,0 +1,268 @@
+.book-smith-manage-books-modal {
+    max-width: 600px;
+    width: 100%;
+}
+
+/* 顶部容器样式 */
+.book-smith-manage-top-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    margin-bottom: 20px;
+}
+
+.book-smith-manage-search-container {
+    flex: 1;
+    margin-right: 12px;
+}
+
+.book-smith-manage-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.book-smith-manage-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+/* 导入按钮样式 */
+.book-smith-import-button {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    border: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.book-smith-import-button:hover {
+    background-color: var(--interactive-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.book-smith-import-button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.book-smith-manage-search-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.book-smith-manage-divider {
+    margin: 20px 0;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+}
+
+.book-smith-manage-book-list {
+    height: 400px;
+    overflow-y: auto;
+    padding: 0 10px;
+}
+
+.book-smith-manage-book-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.book-smith-manage-book-list::-webkit-scrollbar-track {
+    background: var(--background-primary-alt);
+    border-radius: 3px;
+}
+
+.book-smith-manage-book-list::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+.book-smith-manage-book-list::-webkit-scrollbar-thumb:hover {
+    background: var(--interactive-accent);
+}
+
+.book-smith-folder-section {
+    margin-bottom: 10px;
+}
+
+.book-smith-folder-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.book-smith-folder-toggle {
+    flex: 1;
+    text-align: left;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    padding: 6px 10px;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.book-smith-folder-pin {
+    width: 14px;
+    height: 14px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-muted);
+    line-height: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.45;
+    padding: 0;
+    position: relative;
+    transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
+}
+
+.book-smith-folder-pin::before {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 3px;
+    border: 1.2px solid currentColor;
+    border-radius: 2px;
+    top: 2px;
+    left: 3px;
+}
+
+.book-smith-folder-pin::after {
+    content: '';
+    position: absolute;
+    width: 1.2px;
+    height: 7px;
+    background: currentColor;
+    top: 5px;
+    left: 6px;
+}
+
+.book-smith-folder-pin.is-pinned {
+    opacity: 1;
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+}
+
+.book-smith-folder-pin:hover {
+    opacity: 1;
+    color: var(--text-normal);
+    border-color: var(--background-modifier-border);
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-folder-pin.is-pinned:hover {
+    border-color: var(--interactive-accent-hover);
+    background: var(--interactive-accent-hover);
+}
+
+.book-smith-folder-toggle.is-drop-target {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}
+
+.book-smith-book-dragging {
+    opacity: 0.55;
+}
+
+.book-smith-folder-empty {
+    color: var(--text-muted);
+    padding: 10px;
+}
+
+.book-smith-book-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+    background-color: var(--background-primary);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+}
+
+.book-smith-book-container:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+.book-smith-book-cover {
+    flex-shrink: 0;
+    width: 100px;
+    height: 140px;
+    overflow: hidden;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    background-color: var(--background-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.book-smith-book-cover::before {
+    content: "No cover";
+    color: var(--text-muted);
+    font-size: 0.9em;
+    opacity: 0.6;
+}
+
+.book-smith-book-cover img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.book-smith-book-container .setting-item {
+    flex: 1;
+    border: none;
+    padding: 0;
+}
+
+.book-smith-book-container .setting-item-name {
+    font-size: 1.4em;
+    font-weight: 600;
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.book-smith-book-container .setting-item-name .subtitle {
+    display: block;
+    font-size: 0.8em;
+    font-weight: normal;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.book-smith-book-container .setting-item-description {
+    color: var(--text-muted);
+    white-space: pre-line;
+    line-height: 1.1;
+    margin-top: 8px;
+}

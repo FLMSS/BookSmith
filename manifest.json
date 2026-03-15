@@ -1,0 +1,9 @@
+{
+	"id": "book-smith-fork",
+	"name": "Book Smith (Fork)",
+	"version": "1.1.0",
+	"minAppVersion": "0.15.0",
+	"description": "Simplify long-form writing and book creation. Organize chapters, track progress, and export your manuscript in various formats for a seamless publishing workflow.",
+	"author": "FMLS (fork of Yeban8090/book-smith)",
+	"isDesktopOnly": false
+}

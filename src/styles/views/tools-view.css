@@ -1,0 +1,857 @@
+/* 主容器样式 */
+.book-smith-tools-view {
+    font-family: var(--font-interface);
+    padding: 20px;
+}
+
+/* 面板头部样式 */
+.book-smith-panel-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.book-smith-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: var(--h2-size);
+    font-weight: var(--h2-weight);
+    color: var(--h2-color, var(--text-normal));
+    line-height: var(--h2-line-height, 1.4);
+    font-family: var(--h2-font, var(--font-interface));
+    flex: 1;
+}
+
+.book-smith-panel-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.book-smith-panel-icon svg {
+    width: 20px;
+    height: 20px;
+    color: var(--interactive-accent);
+}
+
+/* 工具组样式 */
+.book-smith-tool-group {
+    margin-bottom: 25px;
+}
+
+.book-smith-group-title {
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+/* 工具项基础样式 */
+.book-smith-tool-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin: 5px 0;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.book-smith-tool-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* 工具图标样式 */
+.book-smith-tool-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+
+.book-smith-tool-item:hover .book-smith-tool-icon {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
+
+/* 工具图标颜色变体 */
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-target) .book-smith-tool-icon {
+    color: var(--interactive-accent);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-brain) .book-smith-tool-icon {
+    color: var(--color-purple);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-users) .book-smith-tool-icon {
+    color: var(--color-blue);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-message-square) .book-smith-tool-icon {
+    color: var(--color-orange);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-heart) .book-smith-tool-icon {
+    color: var(--color-green);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-clock) .book-smith-tool-icon,
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-book) .book-smith-tool-icon {
+    color: var(--color-cyan);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-calendar-days) .book-smith-tool-icon {
+    color: var(--color-green, #84cc16);
+}
+
+.book-smith-tool-item:has(.book-smith-tool-icon svg.lucide-compass) .book-smith-tool-icon {
+    color: #2f6ea8;
+}
+
+.book-smith-navigator-view {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.book-smith-navigator-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.book-smith-navigator-back-btn,
+.book-smith-navigator-refresh-btn,
+.book-smith-navigator-change-folder-btn,
+.book-smith-navigator-select-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    cursor: pointer;
+}
+
+.book-smith-navigator-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+}
+
+.book-smith-navigator-refresh-btn {
+    margin-left: auto;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.book-smith-navigator-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #2f6ea8;
+    background: color-mix(in srgb, #2f6ea8 16%, var(--background-secondary));
+    border: 1px solid color-mix(in srgb, #2f6ea8 35%, var(--background-modifier-border));
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+
+.book-smith-navigator-title-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.book-smith-navigator-title {
+    font-weight: 700;
+}
+
+.book-smith-navigator-project-label,
+.book-smith-navigator-folder-path {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+.book-smith-navigator-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.book-smith-navigator-folder-path {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.book-smith-navigator-change-folder-btn,
+.book-smith-navigator-select-btn {
+    padding: 5px 10px;
+}
+
+.book-smith-navigator-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.book-smith-navigator-file-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 7px 9px;
+    background: var(--background-secondary);
+    cursor: pointer;
+    text-align: left;
+    text-decoration: none;
+    color: var(--text-normal);
+}
+
+.book-smith-navigator-file-row.internal-link,
+.book-smith-navigator-file-row.internal-link:hover,
+.book-smith-navigator-file-row.internal-link:focus {
+    color: var(--text-normal);
+    text-decoration: none;
+}
+
+.book-smith-navigator-file-row:hover {
+    border-color: #2f6ea8;
+    background: color-mix(in srgb, #2f6ea8 11%, var(--background-secondary));
+}
+
+.book-smith-navigator-file-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #2f6ea8;
+}
+
+.book-smith-navigator-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.book-smith-navigator-empty {
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.book-smith-navigator-setup {
+    border: 1px dashed color-mix(in srgb, #2f6ea8 45%, var(--background-modifier-border));
+    background: color-mix(in srgb, #2f6ea8 8%, var(--background-secondary));
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* 进度条样式 */
+.book-smith-progress-bar {
+    height: 4px;
+    background-color: var(--background-modifier-border);
+    border-radius: 2px;
+    margin-left: auto;
+    width: 100px;
+}
+
+.book-smith-progress {
+    width: 20%;
+    height: 100%;
+    background-color: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+
+/* 附加信息样式 */
+.book-smith-tool-item-extra {
+    margin-left: auto;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+/* 设置项样式 */
+.book-smith-tool-item.settings {
+    margin-top: 20px;
+}
+
+.book-smith-stats-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.book-smith-stats-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.book-smith-stats-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    cursor: pointer;
+}
+
+.book-smith-stats-title {
+    margin: 0;
+    font-size: 1.05rem;
+    flex: 1;
+}
+
+.book-smith-stats-settings-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: auto;
+    transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.book-smith-stats-period-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.book-smith-stats-settings-btn:hover,
+.book-smith-stats-period-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-stats-settings-btn.is-active,
+.book-smith-stats-period-btn.is-active {
+    border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent) inset;
+}
+
+.book-smith-stats-settings-btn.is-active:hover,
+.book-smith-stats-period-btn.is-active:hover {
+    border-color: color-mix(in srgb, var(--interactive-accent) 62%, var(--background-modifier-border));
+    background: color-mix(in srgb, var(--interactive-accent) 27%, var(--background-secondary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 28%, transparent) inset;
+}
+
+.book-smith-stats-source-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.book-smith-stats-source-title {
+    flex: 1;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.book-smith-stats-source-select {
+    max-width: 48%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 8px;
+}
+
+.book-smith-stats-source-button {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.book-smith-stats-source-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    padding: 8px;
+}
+
+.book-smith-stats-source-option {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 6px 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.book-smith-stats-source-option.is-active {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}
+
+.book-smith-stats-empty {
+    color: var(--text-muted);
+    margin: 8px 0 0;
+}
+
+.book-smith-stats-settings-panel {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background: var(--background-secondary);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.book-smith-stats-settings-panel.is-active-display,
+.book-smith-stats-settings-panel.is-active-period {
+    border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent) inset;
+}
+
+.book-smith-stats-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.book-smith-stats-settings-row label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.book-smith-stats-settings-input {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 8px;
+    width: 90px;
+}
+
+.book-smith-stats-settings-apply {
+    align-self: flex-start;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.book-smith-stats-calendar {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 10px;
+    background: var(--background-primary-alt);
+}
+
+.book-smith-stats-calendar-nav {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.book-smith-stats-nav-btn {
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:first-child {
+    justify-self: start;
+}
+
+.book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:last-child {
+    justify-self: end;
+}
+
+.book-smith-stats-month-label {
+    text-align: center;
+    font-weight: 600;
+}
+
+.book-smith-stats-month-picker {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    min-width: 0;
+    justify-self: center;
+    width: fit-content;
+    margin: 0 4px;
+}
+
+.book-smith-stats-select {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 8px;
+}
+
+.book-smith-stats-month-picker .book-smith-stats-select {
+    min-width: 56px;
+    color: var(--text-normal);
+    border-color: var(--background-modifier-border);
+    background: var(--background-secondary);
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.book-smith-stats-month-picker .book-smith-stats-year-trigger,
+.book-smith-stats-month-picker .book-smith-stats-year-input {
+    min-width: 62px;
+    width: 62px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.book-smith-stats-year-input {
+    width: 72px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 8px;
+}
+
+.book-smith-stats-year-trigger {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    padding: 4px 8px;
+    min-width: 72px;
+    cursor: text;
+}
+
+.book-smith-stats-weekdays,
+.book-smith-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.book-smith-stats-period-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.book-smith-stats-period-grid.is-week {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.book-smith-stats-period-grid.is-month {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.book-smith-stats-period-grid.is-year {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.book-smith-stats-period-box {
+    min-height: 70px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--background-primary);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+}
+
+.book-smith-stats-period-box.has-comment::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-green, #84cc16);
+}
+
+.book-smith-stats-period-grid.is-week .book-smith-stats-period-box.has-comment::after {
+    width: 4px;
+    height: 4px;
+}
+
+.book-smith-stats-period-grid.is-month .book-smith-stats-period-box.has-comment::after {
+    width: 6px;
+    height: 6px;
+}
+
+.book-smith-stats-period-box:hover {
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-stats-period-title {
+    font-weight: 600;
+}
+
+.book-smith-stats-period-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.book-smith-stats-period-value {
+    margin-top: auto;
+    font-size: 12px;
+    color: var(--text-accent);
+}
+
+.book-smith-stats-period-box.is-selected {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent);
+}
+
+.book-smith-stats-period-box.is-selected .book-smith-stats-period-title,
+.book-smith-stats-period-box.is-selected .book-smith-stats-period-subtitle,
+.book-smith-stats-period-box.is-selected .book-smith-stats-period-value {
+    color: var(--text-on-accent);
+}
+
+.book-smith-stats-decade-label {
+    font-weight: 600;
+    align-self: center;
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.book-smith-stats-decade-label:hover,
+.book-smith-stats-decade-label:focus-visible {
+    background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-secondary));
+    color: var(--text-normal);
+    outline: none;
+}
+
+.book-smith-stats-weekdays {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.book-smith-stats-day {
+    min-height: 50px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 6px;
+    cursor: pointer;
+    background: var(--background-primary);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+}
+
+.book-smith-stats-day:hover {
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-stats-day.is-empty {
+    background: transparent;
+    border-style: dashed;
+    cursor: default;
+}
+
+.book-smith-stats-day.has-words {
+    border-color: var(--interactive-accent);
+}
+
+.book-smith-stats-day.has-comment::after {
+    content: '';
+    width: 3.4px;
+    height: 3.4px;
+    border-radius: 50%;
+    background: var(--color-green, #84cc16);
+    position: absolute;
+    top: 3px;
+    right: 4px;
+}
+
+.book-smith-stats-day.is-selected {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent);
+}
+
+.book-smith-stats-day.is-selected .book-smith-stats-day-number,
+.book-smith-stats-day.is-selected .book-smith-stats-day-words {
+    color: var(--text-on-accent);
+}
+
+.book-smith-stats-day-number {
+    font-size: 12px;
+}
+
+.book-smith-stats-day-words {
+    font-size: 11px;
+    color: var(--text-accent);
+    align-self: flex-end;
+}
+
+.progress-negative {
+    color: #e58f9a;
+}
+
+.progress-positive {
+    color: var(--text-accent);
+}
+
+.progress-purple {
+    color: #a855f7;
+}
+
+.progress-zero {
+    color: var(--text-muted);
+}
+
+.book-smith-stats-day-details {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 10px;
+    background: var(--background-secondary);
+    overflow: visible;
+}
+
+.book-smith-stats-selected-date {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.book-smith-stats-selected-words {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.book-smith-stats-selected-metric-row {
+    margin-top: 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    overflow: visible;
+}
+
+.book-smith-stats-selected-breakdown {
+    margin-top: 0;
+    font-weight: 600;
+}
+
+.book-smith-stats-selected-breakdown .book-smith-stats-breakdown-value {
+    cursor: help;
+    position: relative;
+}
+
+.book-smith-stats-tooltip-target {
+    position: relative;
+    cursor: help;
+}
+
+.book-smith-stats-selected-breakdown .book-smith-stats-breakdown-value:hover::after {
+    content: attr(data-breakdown-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.book-smith-stats-tooltip-target:hover::after {
+    content: attr(data-breakdown-tooltip);
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    transform: none;
+    white-space: normal;
+    max-width: 190px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.book-smith-stats-selected-breakdown .book-smith-stats-breakdown-positive:hover {
+    color: #bb6df9;
+}
+
+.book-smith-stats-selected-breakdown .book-smith-stats-breakdown-negative:hover {
+    color: #eda6b0;
+}
+
+.book-smith-stats-comment-wrap {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.book-smith-stats-comment-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.book-smith-stats-comment-input {
+    min-height: 78px;
+    resize: vertical;
+}
+
+.book-smith-stats-comment-save {
+    align-self: flex-start;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    padding: 6px 10px;
+    cursor: pointer;
+}

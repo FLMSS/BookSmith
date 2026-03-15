@@ -1,0 +1,25 @@
+.book-smith-focus-project-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.book-smith-focus-project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.book-smith-focus-project-row {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--background-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.book-smith-focus-project-row.is-selected {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}

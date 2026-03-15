@@ -1,0 +1,60 @@
+.book-smith-navigator-folder-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.book-smith-navigator-folder-search {
+    width: 100%;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--background-secondary);
+}
+
+.book-smith-navigator-folder-list {
+    max-height: 300px;
+    overflow: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 6px;
+    background: var(--background-primary-alt);
+}
+
+.book-smith-navigator-folder-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    padding: 7px 8px;
+    cursor: pointer;
+}
+
+.book-smith-navigator-folder-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.book-smith-navigator-folder-item.is-selected {
+    background: color-mix(in srgb, #2f6ea8 24%, var(--background-secondary));
+}
+
+.book-smith-navigator-folder-item-icon {
+    color: #2f6ea8;
+    display: inline-flex;
+    align-items: center;
+}
+
+.book-smith-navigator-folder-item-path {
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+
+.book-smith-navigator-folder-empty {
+    margin: 6px;
+    color: var(--text-muted);
+}
+
+.book-smith-navigator-folder-actions .setting-item {
+    border: none;
+    padding: 0;
+}

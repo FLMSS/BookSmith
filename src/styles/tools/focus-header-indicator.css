@@ -1,0 +1,686 @@
+.book-smith-mini-focus-trigger {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    overflow: visible;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    --bs-goal-glow-alpha: 0.75;
+    --bs-goal-glow-alpha-peak: 0.95;
+    --bs-goal-soft-glow-alpha: 0.42;
+    --bs-goal-soft-glow-alpha-peak: 0.6;
+    --bs-goal-pulse-duration: 6.8s;
+    --bs-goal-soft-pulse-duration: 8.2s;
+}
+
+.book-smith-mini-focus-trigger.clickable-icon,
+.book-smith-mini-focus-trigger.view-action,
+.book-smith-mini-focus-trigger.clickable-icon.view-action {
+    border-radius: 999px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.book-smith-mini-focus-trigger:hover,
+.book-smith-mini-focus-trigger:focus,
+.book-smith-mini-focus-trigger:focus-visible,
+.book-smith-mini-focus-trigger:active {
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+.book-smith-mini-focus-trigger.clickable-icon:hover,
+.book-smith-mini-focus-trigger.view-action:hover,
+.book-smith-mini-focus-trigger.clickable-icon:focus,
+.book-smith-mini-focus-trigger.view-action:focus,
+.book-smith-mini-focus-trigger.clickable-icon:focus-visible,
+.book-smith-mini-focus-trigger.view-action:focus-visible,
+.book-smith-mini-focus-trigger.clickable-icon.is-active,
+.book-smith-mini-focus-trigger.view-action.is-active {
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 999px !important;
+}
+
+.book-smith-mini-focus-trigger::before,
+.book-smith-mini-focus-trigger::after {
+    content: none !important;
+}
+
+.book-smith-mini-focus-badge {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    overflow: visible;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.book-smith-mini-focus-badge svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    transform: rotate(-90deg);
+}
+
+.book-smith-mini-focus-bg,
+.book-smith-mini-focus-ring,
+.book-smith-mini-focus-ring-flow,
+.book-smith-mini-focus-ring-flow-2 {
+    fill: none;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+}
+
+.book-smith-mini-focus-bg {
+    stroke: rgba(126, 87, 194, 0.14);
+}
+
+.book-smith-mini-focus-ring {
+    stroke: #7c59f0;
+    transition: stroke-dashoffset 0.25s ease;
+}
+
+.book-smith-mini-focus-ring-flow {
+    stroke: transparent;
+    stroke-width: 1.25;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.book-smith-mini-focus-ring-flow-2 {
+    stroke: transparent;
+    stroke-width: 1.1;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode .book-smith-mini-focus-bg {
+    stroke: rgba(255, 132, 24, 0.34);
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode .book-smith-mini-focus-ring {
+    stroke: #ff6a00;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress:not(.is-goal-reached) .book-smith-mini-focus-ring {
+    animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress.is-goal-verify .book-smith-mini-focus-ring {
+    animation: book-smith-goal-verify-pulse 2.2s ease-in-out infinite;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-optional .book-smith-mini-focus-bg {
+    stroke: rgba(255, 132, 24, 0.2);
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-has-progress.is-goal-optional .book-smith-mini-focus-ring {
+    stroke: rgba(255, 106, 0, 0.68);
+    animation: book-smith-goal-neon-breathe-soft var(--bs-goal-soft-pulse-duration) ease-in-out infinite;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode:not(.is-goal-has-progress):not(.is-goal-reached) .book-smith-mini-focus-ring {
+    animation: none;
+    filter: none;
+    opacity: 1;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-bg {
+    stroke: rgba(247, 198, 60, 0.26);
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring {
+    stroke: #f7c63c;
+    animation: book-smith-goal-gold-slow-pulse 14s ease-in-out infinite,
+        book-smith-goal-base-breathe 18s ease-in-out infinite,
+        book-smith-goal-lava-color 32s ease-in-out infinite;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring-flow {
+    stroke: rgba(255, 222, 151, 0.9);
+    stroke-dasharray: 3.1 8.5;
+    animation: book-smith-goal-ring-flow 24s linear infinite,
+        book-smith-goal-lava-flow-color 36s ease-in-out infinite;
+    opacity: 0.62;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring-flow-2 {
+    stroke: rgba(214, 101, 0, 0.84);
+    stroke-dasharray: 2.2 9.8;
+    animation: book-smith-goal-ring-flow-reverse 30s linear infinite,
+        book-smith-goal-lava-flow-color-2 40s ease-in-out infinite;
+    opacity: 0.48;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-celebrating .book-smith-mini-focus-ring {
+    animation: book-smith-goal-complete-sweep 0.9s cubic-bezier(0.2, 0.85, 0.25, 1),
+        book-smith-goal-ring-pulse 1.25s ease-in-out infinite 0.9s;
+}
+
+.book-smith-mini-focus-trigger.is-goal-mode.is-goal-resetting .book-smith-mini-focus-ring {
+    animation: book-smith-goal-reset-sweep 0.38s ease-out;
+}
+
+@keyframes book-smith-goal-ring-pulse {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 0 rgba(247, 198, 60, 0));
+        opacity: 0.92;
+    }
+
+    50% {
+        filter: drop-shadow(0 0 2px rgba(247, 198, 60, 0.85));
+        opacity: 1;
+    }
+}
+
+@keyframes book-smith-goal-neon-breathe {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 1px rgba(255, 106, 0, var(--bs-goal-glow-alpha, 0.55)));
+        opacity: 0.96;
+    }
+
+    50% {
+        filter: drop-shadow(0 0 3px rgba(255, 106, 0, var(--bs-goal-glow-alpha-peak, 0.9)));
+        opacity: 1;
+    }
+}
+
+@keyframes book-smith-goal-neon-breathe-soft {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 0 rgba(255, 106, 0, var(--bs-goal-soft-glow-alpha, 0)));
+        opacity: 0.78;
+    }
+
+    50% {
+        filter: drop-shadow(0 0 1px rgba(255, 106, 0, var(--bs-goal-soft-glow-alpha-peak, 0.45)));
+        opacity: 0.88;
+    }
+}
+
+@keyframes book-smith-goal-verify-pulse {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 0 rgba(255, 106, 0, 0));
+        opacity: 0.9;
+    }
+
+    50% {
+        filter: drop-shadow(0 0 2px rgba(255, 106, 0, 0.65));
+        opacity: 1;
+    }
+}
+
+@keyframes book-smith-goal-reset-sweep {
+    0% {
+        stroke: #f7c63c;
+        transform: scale(1.03);
+        opacity: 1;
+    }
+
+    100% {
+        stroke: #ff6a00;
+        transform: scale(1);
+        opacity: 0.96;
+    }
+}
+
+@keyframes book-smith-goal-base-breathe {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 0 rgba(247, 198, 60, 0));
+        opacity: 0.95;
+    }
+
+    50% {
+        filter: drop-shadow(0 0 1px rgba(247, 198, 60, 0.26));
+        opacity: 1;
+    }
+}
+
+@keyframes book-smith-goal-gold-slow-pulse {
+    0%,
+    100% {
+        filter: drop-shadow(0 0 0 rgba(247, 198, 60, 0));
+        opacity: 0.96;
+        transform: scale(1);
+    }
+
+    50% {
+        filter: drop-shadow(0 0 2px rgba(247, 198, 60, 0.48));
+        opacity: 1;
+        transform: scale(1.02);
+    }
+}
+
+@keyframes book-smith-goal-complete-sweep {
+    0% {
+        stroke: #b84f00;
+        filter: drop-shadow(0 0 0 rgba(184, 82, 0, 0));
+        transform: scale(0.94);
+        opacity: 0.8;
+    }
+
+    45% {
+        stroke: #ffd86b;
+        filter: drop-shadow(0 0 4px rgba(247, 198, 60, 0.85));
+        transform: scale(1.08);
+        opacity: 1;
+    }
+
+    100% {
+        stroke: #f7c63c;
+        filter: drop-shadow(0 0 0 rgba(247, 198, 60, 0));
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes book-smith-goal-ring-flow {
+    0% {
+        stroke-dashoffset: 0;
+        opacity: 0.44;
+    }
+
+    50% {
+        opacity: 0.72;
+    }
+
+    100% {
+        stroke-dashoffset: -10;
+        opacity: 0.44;
+    }
+}
+
+@keyframes book-smith-goal-ring-flow-reverse {
+    0% {
+        stroke-dashoffset: 0;
+        opacity: 0.34;
+    }
+
+    50% {
+        opacity: 0.58;
+    }
+
+    100% {
+        stroke-dashoffset: 12;
+        opacity: 0.34;
+    }
+}
+
+@keyframes book-smith-goal-lava-color {
+    0%,
+    100% {
+        stroke: #f7c63c;
+        filter: drop-shadow(0 0 0 rgba(247, 198, 60, 0));
+    }
+
+    50% {
+        stroke: #d96a00;
+        filter: drop-shadow(0 0 1px rgba(217, 106, 0, 0.24));
+    }
+}
+
+@keyframes book-smith-goal-lava-flow-color {
+    0%,
+    100% {
+        stroke: rgba(255, 222, 151, 0.82);
+    }
+
+    50% {
+        stroke: rgba(238, 158, 58, 0.62);
+    }
+}
+
+@keyframes book-smith-goal-lava-flow-color-2 {
+    0%,
+    100% {
+        stroke: rgba(214, 101, 0, 0.74);
+    }
+
+    50% {
+        stroke: rgba(255, 178, 72, 0.52);
+    }
+}
+
+.book-smith-goal-confetti-burst {
+    position: fixed;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 1200;
+}
+
+.book-smith-goal-confetti-piece {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 4px;
+    height: 7px;
+    border-radius: 1px;
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(0.85);
+    animation: book-smith-goal-confetti var(--dur, 900ms) ease-out var(--delay, 0ms) forwards;
+}
+
+@keyframes book-smith-goal-confetti {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) rotate(0deg) scale(0.85);
+    }
+
+    15% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate3d(var(--dx, 18px), var(--dy, -14px), 0) rotate(var(--rot, 110deg)) scale(1);
+    }
+}
+
+.book-smith-mini-focus-popover {
+    position: fixed;
+    transform: translateX(-50%) translateY(-6px);
+    min-width: 138px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 7px;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.book-smith-mini-focus-popover::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -14px;
+    height: 14px;
+    pointer-events: auto;
+    background: transparent;
+}
+
+.book-smith-mini-focus-popover-swap {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 12px;
+    height: 12px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    opacity: 0.95;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.book-smith-mini-focus-popover-swap svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2;
+}
+
+.book-smith-mini-focus-popover-swap:hover {
+    color: var(--text-normal);
+}
+
+
+.book-smith-mini-focus-popover-boost {
+    position: absolute;
+    top: 21px;
+    right: 6px;
+    width: 16px;
+    height: 14px;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 3px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: visible;
+    font-size: 10px;
+    line-height: 12px;
+    pointer-events: none;
+}
+
+.book-smith-mini-focus-popover-boost.is-visible {
+    display: inline-flex;
+    pointer-events: auto;
+}
+
+.book-smith-mini-focus-popover-boost:hover {
+    color: var(--text-normal);
+}
+
+.book-smith-mini-focus-popover.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+.book-smith-mini-focus-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 2px;
+    min-height: 20px;
+}
+
+.book-smith-mini-focus-project {
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary-alt);
+    color: var(--text-normal);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    max-width: 100px;
+    text-align: center;
+    line-height: 16px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    position: relative;
+    overflow: visible;
+}
+
+.book-smith-mini-focus-project::before {
+    content: '';
+    position: absolute;
+    inset: -2px -5px;
+    border-radius: 6px;
+    background: transparent;
+    pointer-events: none;
+    transition: background-color 0.12s ease;
+    z-index: 0;
+}
+
+.book-smith-mini-focus-project:hover::before {
+    background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.book-smith-mini-focus-project > * {
+    position: relative;
+    z-index: 1;
+}
+
+.book-smith-mini-focus-project:hover {
+    /* Remove border, color, and box-shadow changes. Only use ::before for highlight. */
+}
+
+.book-smith-mini-focus-time {
+    position: relative;
+    border: 0;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.1;
+    padding: 1px 1px;
+    cursor: pointer;
+    transition: color 0.12s ease;
+}
+
+.book-smith-mini-focus-time.is-goal-display {
+    cursor: default;
+}
+
+.book-smith-mini-focus-time::before {
+    content: '';
+    position: absolute;
+    inset: -2px -5px;
+    border-radius: 5px;
+    background: transparent;
+    pointer-events: none;
+    transition: background-color 0.12s ease;
+}
+
+.book-smith-mini-focus-time:hover {
+    color: var(--text-accent);
+}
+
+.book-smith-mini-focus-time:hover::before {
+    background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.book-smith-mini-focus-time-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: fit-content;
+    min-width: 58px;
+    margin: 0 auto;
+}
+
+.book-smith-mini-focus-time-adjust {
+    position: relative;
+    color: var(--text-muted);
+    font-size: 7px;
+    line-height: 1;
+    width: 100%;
+    height: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.75;
+    z-index: auto;
+}
+
+.book-smith-mini-focus-time-adjust::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-radius: 5px;
+    background: transparent;
+    pointer-events: none;
+    transition: background-color 0.12s ease;
+}
+
+.book-smith-mini-focus-time-adjust.up::before {
+    top: -4px;
+    bottom: -1px;
+}
+
+.book-smith-mini-focus-time-adjust.down::before {
+    top: -1px;
+    bottom: -4px;
+}
+
+.book-smith-mini-focus-time-adjust:hover {
+    color: #7c59f0;
+}
+
+.book-smith-mini-focus-time-adjust:hover::before {
+    background: color-mix(in srgb, #7c59f0 14%, transparent);
+}
+
+.book-smith-mini-focus-time-adjust.is-disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+}
+
+.book-smith-mini-focus-time-adjust.is-hidden,
+.book-smith-mini-focus-project.is-hidden {
+    display: none;
+}
+
+.book-smith-mini-focus-goal-settings-row {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+}
+
+.book-smith-mini-focus-goal-settings-row.is-visible {
+    display: flex;
+}
+
+.book-smith-mini-focus-popover.is-goal-mode {
+    padding-top: 5px;
+    padding-bottom: 6px;
+}
+
+.book-smith-mini-focus-popover.is-goal-mode .book-smith-mini-focus-top-row {
+    min-height: 6px;
+    margin-bottom: 0;
+}
+
+.book-smith-mini-focus-popover.is-goal-mode .book-smith-mini-focus-time-wrap {
+    margin-top: -1px;
+}
+
+.book-smith-mini-focus-popover.is-goal-mode .book-smith-mini-focus-goal-settings-row {
+    margin-top: 0;
+}
+
+.book-smith-mini-focus-goal-settings {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1.1;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+}
+
+.book-smith-mini-focus-goal-settings:hover {
+    color: var(--text-accent);
+}
