@@ -27,7 +27,7 @@ interface DailyProgressEntry {
     // iteration_deletions removed
 }
 
-type GoalWidgetState = 'orange' | 'verify' | 'gold';
+type GoalWidgetState = 'orange' | 'verify';
 
 export class FocusHeaderIndicator {
     private actionsEl: HTMLElement | null = null;
@@ -450,13 +450,13 @@ export class FocusHeaderIndicator {
 
     private applyGoalPendingVisualState(): void {
         this.triggerEl?.toggleClass('is-goal-mode', true);
-        const shouldStayGold = this.goalCompleted || this.goalDisplayState.goalReached || this.hasGoalReached;
-        this.triggerEl?.toggleClass('is-goal-reached', shouldStayGold);
-        this.triggerEl?.toggleClass('is-goal-verify', !shouldStayGold && this.goalWidgetState === 'verify');
+        this.triggerEl?.toggleClass('is-goal-mode', true);
+        this.triggerEl?.toggleClass('is-goal-reached', this.goalCompleted || this.goalDisplayState.goalReached || this.hasGoalReached);
+        this.triggerEl?.toggleClass('is-goal-verify', this.goalWidgetState === 'verify');
         this.triggerEl?.removeClass('is-goal-optional');
 
         if (this.ringEl) {
-            const fallbackRatio = shouldStayGold
+            const fallbackRatio = (this.goalCompleted || this.goalDisplayState.goalReached || this.hasGoalReached)
                 ? 1
                 : Math.max(0, Math.min(1, this.goalDisplayState.progressRatio || 0));
             const filledLength = this.ringCircumference * fallbackRatio;
@@ -464,7 +464,7 @@ export class FocusHeaderIndicator {
             this.ringEl.style.strokeDashoffset = '0';
         }
 
-        const pulseRatio = shouldStayGold
+        const pulseRatio = (this.goalCompleted || this.goalDisplayState.goalReached || this.hasGoalReached)
             ? 1
             : Math.max(0, Math.min(1, this.goalDisplayState.progressRatio || 0));
         this.updateGoalPulseVisualParams(this.goalDisplayState.todayWords, pulseRatio);
@@ -496,17 +496,18 @@ export class FocusHeaderIndicator {
 
     private playGoalReachedAnimation(): void {
         if (!this.triggerEl) return;
-        this.triggerEl.removeClass('is-goal-celebrating');
+        this.triggerEl.removeClass('is-goal-complete-pulse');
         void this.triggerEl.offsetWidth;
-        this.triggerEl.addClass('is-goal-celebrating');
+        this.triggerEl.addClass('is-goal-complete-pulse');
 
         if (this.goalCelebrateTimer !== null) {
             window.clearTimeout(this.goalCelebrateTimer);
         }
+        // Animation duration matches CSS (0.7s)
         this.goalCelebrateTimer = window.setTimeout(() => {
-            this.triggerEl?.removeClass('is-goal-celebrating');
+            this.triggerEl?.removeClass('is-goal-complete-pulse');
             this.goalCelebrateTimer = null;
-        }, 980);
+        }, 700);
     }
 
     private async playGoalReachedChime(): Promise<void> {
@@ -730,10 +731,10 @@ export class FocusHeaderIndicator {
         if (isFirstEvaluationForKey) {
             this.resetGoalVerificationState(goalKey, state.todayWords, state.goalWords);
             if (state.goalWords > 0 && state.todayWords >= state.goalWords) {
-                // On initial load/open for this day+project, reflect GOLD immediately with no celebration.
+                // On initial load/open for this day+project, reflect completion immediately with no celebration.
                 this.goalCompleted = true;
                 this.hasGoalReached = true;
-                this.goalWidgetState = 'gold';
+                this.goalWidgetState = 'orange';
                 this.lastWrittenToday = state.todayWords;
                 this.lastGoalWordsForActiveKey = state.goalWords;
                 return true;
@@ -768,7 +769,7 @@ export class FocusHeaderIndicator {
                     if (!this.goalResetCandidate) {
                         this.startGoalResetCandidate(3500, goalKey);
                     }
-                    this.goalWidgetState = 'gold';
+                    this.goalWidgetState = 'orange';
                     this.lastWrittenToday = state.todayWords;
                     this.lastGoalWordsForActiveKey = state.goalWords;
                     return true;
@@ -781,7 +782,7 @@ export class FocusHeaderIndicator {
             }
 
             this.cancelGoalResetCandidate();
-            this.goalWidgetState = 'gold';
+            this.goalWidgetState = 'orange';
             this.lastWrittenToday = state.todayWords;
             this.lastGoalWordsForActiveKey = state.goalWords;
             return true;
@@ -837,7 +838,7 @@ export class FocusHeaderIndicator {
 
         if (verifiedState.goalWords > 0 && verifiedState.todayWords >= verifiedState.goalWords) {
             this.goalCompleted = true;
-            this.goalWidgetState = 'gold';
+            this.goalWidgetState = 'orange';
             this.goalDisplayState = verifiedState;
             this.lastGoalWordsForActiveKey = verifiedState.goalWords;
             this.updateUi();
@@ -930,7 +931,7 @@ export class FocusHeaderIndicator {
     }
 
     private getGoalResetThreshold(goalWords: number): number {
-        // Universal behavior: keep gold only while staying within the top 10% of goal.
+        // Universal behavior: keep completion only while staying within the top 10% of goal.
         return Math.max(0, goalWords * 0.9);
     }
 

@@ -138,15 +138,31 @@
     opacity: 1;
 }
 
-.book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-bg {
-    stroke: rgba(247, 198, 60, 0.26);
-}
 
 .book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring {
-    stroke: #f7c63c;
-    animation: book-smith-goal-gold-slow-pulse 14s ease-in-out infinite,
-        book-smith-goal-base-breathe 18s ease-in-out infinite,
-        book-smith-goal-lava-color 32s ease-in-out infinite;
+    stroke: #ff6a00;
+    animation: book-smith-goal-neon-breathe var(--bs-goal-pulse-duration) ease-in-out infinite;
+}
+@keyframes book-smith-goal-complete-pulse {
+    0% {
+        transform: scale(0.96);
+        filter: drop-shadow(0 0 0px #ff6a00);
+    }
+    40% {
+        transform: scale(1.04);
+        filter: drop-shadow(0 0 12px #ff6a00);
+    }
+    70% {
+        transform: scale(1.02);
+        filter: drop-shadow(0 0 8px #ff6a00);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.book-smith-mini-focus-trigger.is-goal-complete-pulse .book-smith-mini-focus-ring {
+    animation: book-smith-goal-complete-pulse 0.7s cubic-bezier(0.2, 0.85, 0.25, 1);
 }
 
 .book-smith-mini-focus-trigger.is-goal-mode.is-goal-reached .book-smith-mini-focus-ring-flow {
