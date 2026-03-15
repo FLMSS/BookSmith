@@ -1,3 +1,4 @@
+import { DebugStatsModal } from '../modals/DebugStatsModal';
 import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf, setIcon } from 'obsidian';
 import { FocusToolView } from '../components/FocusToolView';
 import BookSmithPlugin from '../main';
@@ -18,6 +19,15 @@ type DailyProgressEntry = {
 };
 
 export class ToolView extends ItemView {
+        // Opens the debug stats modal for a given date
+        private openDebugStatsPopup(date: string) {
+            const book = this.statsBooks.find(b => b.basic.uuid === this.statsSourceBookId);
+            if (!book) return;
+            new DebugStatsModal(document.body, book, date, () => {
+                this.plugin.bookManager.updateBook(book.basic.uuid, book);
+                this.refresh();
+            }).open();
+        }
     private normalView: HTMLElement | null = null;
     private focusView: FocusToolView | null = null;
     private isNavigatorMode = false;
@@ -1275,10 +1285,22 @@ export class ToolView extends ItemView {
         const mainMetric = this.getMainMetricForDetails(selectedMetric, selectedProgress);
         const details = container.createDiv({ cls: 'book-smith-stats-day-details' });
 
-        details.createEl('div', {
-            cls: 'book-smith-stats-selected-date',
-            text: this.getSelectedPeriodLabel(selectedDate)
+        // Create a relatively positioned container for date and absolutely positioned icon
+        const dateHeader = details.createDiv({
+            cls: 'book-smith-stats-selected-date-row'
         });
+        const dateText = document.createElement('span');
+        dateText.textContent = this.getSelectedPeriodLabel(selectedDate);
+        dateText.className = 'book-smith-stats-selected-date';
+        dateHeader.appendChild(dateText);
+
+        // Debug icon button (darker, thinner, absolutely positioned)
+        const debugBtn = document.createElement('button');
+        debugBtn.className = 'book-smith-debug-stats-btn';
+        debugBtn.title = 'Debug Stats';
+        debugBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
+        debugBtn.onclick = () => this.openDebugStatsPopup(this.toLocalISODate(selectedDate));
+        dateHeader.appendChild(debugBtn);
 
         const metricRow = details.createDiv({ cls: 'book-smith-stats-selected-metric-row' });
         const selectedMetricEl = metricRow.createEl('div', {

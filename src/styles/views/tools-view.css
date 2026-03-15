@@ -1,3 +1,55 @@
+/* Selected date row: flex for date and debug icon */
+
+.book-smith-stats-selected-date-row {
+    position: relative;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.book-smith-stats-selected-date {
+    font-size: 1.1em;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+/* Debug stats button styling */
+.book-smith-debug-stats-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    width: 28px;
+    border-radius: 50%;
+    z-index: 1;
+    padding: 0;
+    box-shadow: none;
+    transition: background 0.15s;
+}
+.book-smith-debug-stats-btn:hover {
+    background: var(--background-modifier-hover);
+}
+.book-smith-debug-stats-btn svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted, #888);
+    stroke-width: 1.2;
+    opacity: 0.85;
+    transition: color 0.15s, opacity 0.15s;
+}
+.book-smith-debug-stats-btn:hover svg {
+    color: var(--interactive-accent);
+    opacity: 1;
+}
 /* 主容器样式 */
 .book-smith-tools-view {
     font-family: var(--font-interface);
