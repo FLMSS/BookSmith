@@ -451,23 +451,19 @@ export class BookSmithView extends ItemView {
         const entry = this.currentBook?.stats?.daily_progress?.[date];
         if (!entry) return null;
         const fallbackWordsDeleted = entry.words_deleted ?? Math.abs(entry.negative_change || 0);
-        const fallbackIterationDeletions = entry.iteration_deletions || 0;
-        const fallbackOldDeletions = Math.max(0, fallbackWordsDeleted - fallbackIterationDeletions);
         return {
             positive_change: entry.positive_change || 0,
             negative_change: entry.negative_change || 0,
             net_change: entry.net_change || 0,
             words_added: entry.words_added ?? entry.positive_change ?? 0,
-            words_deleted: fallbackWordsDeleted,
-            iteration_deletions: fallbackIterationDeletions,
-            old_deletions: entry.old_deletions ?? fallbackOldDeletions
+            words_deleted: fallbackWordsDeleted
         };
     }
 
     private getRawWritingValue(entry: DailyProgressEntry): number {
         const mode = this.getWritingDisplayMode();
         if (mode === 'daily-output') {
-            return (entry.words_added ?? entry.positive_change ?? 0) - (entry.iteration_deletions || 0);
+            return Math.max(0, entry.net_change || 0);
         }
         if (mode === 'raw') {
             return (entry.words_added ?? entry.positive_change ?? 0) - (entry.words_deleted ?? Math.abs(entry.negative_change || 0));

@@ -480,16 +480,12 @@ export class ToolView extends ItemView {
 
         Object.entries(existing).forEach(([date, entry]) => {
             const fallbackWordsDeleted = entry?.words_deleted ?? Math.abs(entry?.negative_change || 0);
-            const fallbackIterationDeletions = entry?.iteration_deletions || 0;
-            const fallbackOldDeletions = Math.max(0, fallbackWordsDeleted - fallbackIterationDeletions);
             merged[date] = {
                 positive_change: entry?.positive_change || 0,
                 negative_change: entry?.negative_change || 0,
                 net_change: entry?.net_change || 0,
                 words_added: entry?.words_added ?? entry?.positive_change ?? 0,
-                words_deleted: fallbackWordsDeleted,
-                iteration_deletions: fallbackIterationDeletions,
-                old_deletions: entry?.old_deletions ?? fallbackOldDeletions
+                words_deleted: fallbackWordsDeleted
             };
         });
 
@@ -1435,12 +1431,13 @@ export class ToolView extends ItemView {
     }
 
     private getNewMaterialWritten(entry: DailyProgressEntry): number {
-        return (entry.words_added ?? entry.positive_change ?? 0) - (entry.iteration_deletions || 0);
+        // Removed: no longer needed
+        return 0;
     }
 
     private getRawWritingMetric(entry: DailyProgressEntry): number {
         if (this.statsWritingDisplayMode === 'daily-output') {
-            return this.getNewMaterialWritten(entry);
+            return Math.max(0, entry.net_change || 0);
         }
         return entry.net_change || 0;
     }
@@ -1457,9 +1454,11 @@ export class ToolView extends ItemView {
             };
         }
 
+        // New Material (Net) mode
+        const net = entry.net_change || 0;
         return {
-            positive: this.getNewMaterialWritten(entry),
-            negative: entry.old_deletions ?? Math.max(0, (entry.words_deleted ?? Math.abs(entry.negative_change || 0)) - (entry.iteration_deletions || 0))
+            positive: Math.max(0, net),
+            negative: Math.min(0, net)
         };
     }
 
@@ -1470,11 +1469,12 @@ export class ToolView extends ItemView {
         if (!progress) {
             return currentMetric;
         }
-
         if (this.statsWritingDisplayMode === 'daily-output') {
-            return currentMetric;
+            return Math.max(0, progress.net_change || 0);
         }
-
+        if (this.statsWritingDisplayMode === 'raw') {
+            return (progress.words_added ?? progress.positive_change ?? 0) - (progress.words_deleted ?? Math.abs(progress.negative_change || 0));
+        }
         return progress.net_change || 0;
     }
 

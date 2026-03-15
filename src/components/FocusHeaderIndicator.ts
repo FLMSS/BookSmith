@@ -24,7 +24,7 @@ interface DailyProgressEntry {
     net_change?: number;
     words_added?: number;
     words_deleted?: number;
-    iteration_deletions?: number;
+    // iteration_deletions removed
 }
 
 type GoalWidgetState = 'orange' | 'verify' | 'gold';
@@ -987,15 +987,14 @@ export class FocusHeaderIndicator {
             negative_change: entry.negative_change ?? 0,
             net_change: entry.net_change ?? 0,
             words_added: entry.words_added ?? entry.positive_change ?? 0,
-            words_deleted: entry.words_deleted ?? Math.abs(entry.negative_change || 0),
-            iteration_deletions: entry.iteration_deletions ?? 0
+            words_deleted: entry.words_deleted ?? Math.abs(entry.negative_change || 0)
         };
     }
 
     private getRawWritingValue(entry: DailyProgressEntry): number {
         const mode = this.plugin.settings.stats?.leftPaneWritingDisplayMode || 'daily-output';
         if (mode === 'daily-output') {
-            return (entry.words_added ?? entry.positive_change ?? 0) - (entry.iteration_deletions || 0);
+            return Math.max(0, entry.net_change || 0);
         }
         if (mode === 'raw') {
             return (entry.words_added ?? entry.positive_change ?? 0) - (entry.words_deleted ?? Math.abs(entry.negative_change || 0));

@@ -96,8 +96,6 @@ export interface BookStats {
         net_change: number;
         words_added?: number;
         words_deleted?: number;
-        iteration_deletions?: number;
-        old_deletions?: number;
     }>; // Daily net progress breakdown
     daily_comments: Record<string, string>; // Daily writing comments
     writing_periods?: BookWritingPeriod[];

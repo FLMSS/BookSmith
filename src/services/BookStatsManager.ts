@@ -151,17 +151,8 @@ export class BookStatsManager {
             tracker.pendingOldDeletions > 0;
         const rawAdded = hasTrackedChanges ? tracker.pendingAddedWords : Math.max(0, delta);
         const rawRemoved = hasTrackedChanges ? tracker.pendingRemovedWords : Math.max(0, -delta);
-        const classifiedIterationDeletions = hasTrackedChanges
-            ? tracker.pendingIterationDeletions
-            : Math.min(tracker.newWordsBalance, rawRemoved);
-        const classifiedOldDeletions = hasTrackedChanges
-            ? tracker.pendingOldDeletions
-            : Math.max(0, rawRemoved - classifiedIterationDeletions);
-
         if (rawRemoved > 0) {
             tracker.pendingDeletedWords += rawRemoved;
-            tracker.pendingDeletedIterationWords += classifiedIterationDeletions;
-            tracker.pendingDeletedOldWords += classifiedOldDeletions;
         }
 
         if (rawAdded > 0) {
@@ -172,15 +163,8 @@ export class BookStatsManager {
             }
         }
 
-        // Disable copy/paste move reconciliation
-        const moveWords = 0;
-        let moveIterationWords = 0;
-        let moveOldWords = 0;
-
-        const wordsAddedDelta = rawAdded - moveWords;
-        const wordsDeletedDelta = rawRemoved - moveWords;
-        const iterationDeletionDelta = classifiedIterationDeletions - moveIterationWords;
-        const oldDeletionDelta = classifiedOldDeletions - moveOldWords;
+        const wordsAddedDelta = rawAdded;
+        const wordsDeletedDelta = rawRemoved;
 
         // 更新每日字数
         const dailyWords = { ...stats.daily_words };
@@ -193,15 +177,13 @@ export class BookStatsManager {
 
         // 更新每日净进度明细（新增、删减、净值）
         const dailyProgress = { ...(stats.daily_progress || {}) };
-        if (delta !== 0 || rawAdded > 0 || rawRemoved > 0 || moveWords > 0) {
+        if (delta !== 0 || rawAdded > 0 || rawRemoved > 0) {
             const previous = dailyProgress[today] || {
                 positive_change: 0,
                 negative_change: 0,
                 net_change: 0,
                 words_added: 0,
-                words_deleted: 0,
-                iteration_deletions: 0,
-                old_deletions: 0
+                words_deleted: 0
             };
 
             const positiveChange = Math.max(0, previous.positive_change + wordsAddedDelta);
@@ -209,17 +191,13 @@ export class BookStatsManager {
             const netChange = positiveChange + negativeChange;
             const wordsAdded = Math.max(0, (previous.words_added || 0) + wordsAddedDelta);
             const wordsDeleted = Math.max(0, (previous.words_deleted || 0) + wordsDeletedDelta);
-            const iterationDeletions = Math.max(0, (previous.iteration_deletions || 0) + iterationDeletionDelta);
-            const oldDeletions = Math.max(0, (previous.old_deletions || 0) + oldDeletionDelta);
 
             dailyProgress[today] = {
                 positive_change: positiveChange,
                 negative_change: negativeChange,
                 net_change: netChange,
                 words_added: wordsAdded,
-                words_deleted: wordsDeleted,
-                iteration_deletions: iterationDeletions,
-                old_deletions: oldDeletions
+                words_deleted: wordsDeleted
             };
         }
 
@@ -433,8 +411,8 @@ export class BookStatsManager {
         }
 
         const wordsAdded = entry.words_added ?? entry.positive_change ?? 0;
-        const iterationDeletions = entry.iteration_deletions ?? 0;
-        return Math.max(0, wordsAdded - iterationDeletions);
+        // iteration_deletions removed
+        return Math.max(0, wordsAdded);
     }
 
     private handlePasteEvent(event: ClipboardEvent): void {
