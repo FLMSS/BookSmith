@@ -23,7 +23,7 @@ type DailyProgressEntry = {
 export class ToolView extends ItemView {
             public toolbox: ToolsViewToolbox | undefined;
         // Opens the debug stats modal for a given date
-        private openDebugStatsPopup(date: string) {
+        public openDebugStatsPopup(date: string) {
             const book = this.statsBooks.find(b => b.basic.uuid === this.statsSourceBookId);
             if (!book) return;
             new DebugStatsModal(document.body, book, date, () => {
@@ -461,7 +461,7 @@ export class ToolView extends ItemView {
         this.renderNavigatorView(this.normalView);
     }
 
-    private async refreshStatsSources() {
+    public async refreshStatsSources() {
         this.statsBooks = await this.plugin.bookManager.getAllBooks();
 
         if (this.statsSourceBookId !== 'global') {
@@ -624,7 +624,7 @@ export class ToolView extends ItemView {
         });
     }
 
-    private getActiveStatsSourceTitle(): string {
+    public getActiveStatsSourceTitle(): string {
         if (this.statsSourceBookId === 'global') {
             return i18n.t('GLOBAL_STATS');
         }
@@ -700,13 +700,13 @@ export class ToolView extends ItemView {
         });
     }
 
-    private getStatsProgressModeLabel(mode: 'new-material-net' | 'daily-output' | 'raw'): string {
+    public getStatsProgressModeLabel(mode: 'new-material-net' | 'daily-output' | 'raw'): string {
         if (mode === 'daily-output') return i18n.t('NEW_MATERIAL_DAILY_OUTPUT_MODE');
         if (mode === 'raw') return i18n.t('RAW_DATA_MODE');
         return i18n.t('NEW_MATERIAL_NET_MODE');
     }
 
-    private openStatsProgressMenu(
+    public openStatsProgressMenu(
         anchor: HTMLElement,
         currentMode: 'new-material-net' | 'daily-output' | 'raw',
         onSelect: (mode: 'new-material-net' | 'daily-output' | 'raw') => Promise<void>
@@ -739,7 +739,7 @@ export class ToolView extends ItemView {
         document.addEventListener('mousedown', this.statsProgressMenuOutsideHandler, true);
     }
 
-    private closeStatsProgressMenu(): void {
+    public closeStatsProgressMenu(): void {
         this.statsProgressMenuEl?.remove();
         this.statsProgressMenuEl = null;
         if (this.statsProgressMenuOutsideHandler) {
@@ -816,7 +816,7 @@ export class ToolView extends ItemView {
         tooltip.style.top = `${Math.max(viewportPadding, y)}px`;
     }
 
-    private async persistStatsPreferences() {
+    public async persistStatsPreferences() {
         this.plugin.settings.stats = {
             displayMode: this.statsDisplayMode,
             writingDisplayMode: this.statsWritingDisplayMode,
@@ -826,28 +826,8 @@ export class ToolView extends ItemView {
         await this.plugin.saveSettings();
     }
 
-    public renderCalendar(container: HTMLElement) {
-        const calendar = container.createDiv({ cls: 'book-smith-stats-calendar' });
-        const nav = calendar.createDiv({ cls: 'book-smith-stats-calendar-nav' });
 
-        const prevButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('PREVIOUS_MONTH') });
-        prevButton.addEventListener('click', () => {
-            this.shiftViewPeriod(-1);
-            this.redrawStatisticsView();
-        });
-
-        this.renderMonthYearPicker(nav);
-
-        const nextButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('NEXT_MONTH') });
-        nextButton.addEventListener('click', () => {
-            this.shiftViewPeriod(1);
-            this.redrawStatisticsView();
-        });
-
-        this.renderCalendarBody(calendar);
-    }
-
-    private renderCalendarBody(calendar: HTMLElement) {
+    public renderCalendarBody(calendar: HTMLElement) {
         if (this.statsPeriodMode === 'day') {
             const weekdays = calendar.createDiv({ cls: 'book-smith-stats-weekdays' });
             ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
@@ -875,7 +855,7 @@ export class ToolView extends ItemView {
         this.renderYearBoxes(grid);
     }
 
-    private renderMonthYearPicker(nav: HTMLElement) {
+    public renderMonthYearPicker(nav: HTMLElement) {
         const picker = nav.createDiv({ cls: 'book-smith-stats-month-picker' });
 
         if (this.statsPeriodMode === 'year') {
@@ -1229,110 +1209,8 @@ export class ToolView extends ItemView {
         return this.selectedStatsDate === anchorIso;
     }
 
-    public renderSelectedDayStats(container: HTMLElement) {
-        const selectedDate = this.parseLocalISODate(this.selectedStatsDate);
-        const selectedMetric = this.getMetricForPeriod(selectedDate);
-        const anchorDate = this.getPeriodAnchorDate(selectedDate);
-        const anchorIso = this.toLocalISODate(anchorDate);
-        const commentKey = this.getCommentStorageKey(anchorIso);
-        const selectedComment = this.statsPeriodMode === 'day'
-            ? (this.statsDailyComments[this.selectedStatsDate] || '')
-            : (this.statsPeriodComments[commentKey] || '');
-        const selectedProgress = this.getProgressForSelectedPeriod(selectedDate);
-        const mainMetric = this.getMainMetricForDetails(selectedMetric, selectedProgress);
-        const details = container.createDiv({ cls: 'book-smith-stats-day-details' });
 
-        // Create a relatively positioned container for date and absolutely positioned icon
-        const dateHeader = details.createDiv({
-            cls: 'book-smith-stats-selected-date-row'
-        });
-        const dateText = document.createElement('span');
-        dateText.textContent = this.getSelectedPeriodLabel(selectedDate);
-        dateText.className = 'book-smith-stats-selected-date';
-        dateHeader.appendChild(dateText);
-
-        // Debug icon button (darker, thinner, absolutely positioned)
-        const debugBtn = document.createElement('button');
-        debugBtn.className = 'book-smith-debug-stats-btn';
-        debugBtn.title = 'Debug Stats';
-        debugBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
-        debugBtn.onclick = () => this.openDebugStatsPopup(this.toLocalISODate(selectedDate));
-        dateHeader.appendChild(debugBtn);
-
-        const metricRow = details.createDiv({ cls: 'book-smith-stats-selected-metric-row' });
-        const selectedMetricEl = metricRow.createEl('div', {
-            cls: 'book-smith-stats-selected-words',
-            text: this.getSelectedDayMetricText(mainMetric)
-        });
-        if ((this.statsDisplayMode === 'words' || this.statsDisplayMode === 'pages') && selectedProgress && this.hasProgressActivity(selectedProgress)) {
-            selectedMetricEl.addClass('book-smith-stats-tooltip-target');
-            selectedMetricEl.setAttr('data-breakdown-tooltip', this.getMainMetricHoverLabel());
-        }
-        if (mainMetric < 0) {
-            selectedMetricEl.addClass('progress-negative');
-        } else if (mainMetric > 0 && (this.statsDisplayMode === 'words' || this.statsDisplayMode === 'pages')) {
-            selectedMetricEl.addClass('progress-purple');
-        }
-
-        if ((this.statsDisplayMode === 'words' || this.statsDisplayMode === 'pages') && selectedProgress && this.hasProgressActivity(selectedProgress)) {
-            const breakdownValues = this.getDisplayedBreakdown(selectedProgress);
-            const breakdownLabels = this.getBreakdownHoverLabels();
-            const breakdown = metricRow.createDiv({ cls: 'book-smith-stats-selected-breakdown' });
-            breakdown.createEl('span', { text: '(' });
-            if (this.statsWritingDisplayMode === 'daily-output') {
-                const netValue = selectedProgress.net_change || 0;
-                breakdown.createEl('span', {
-                    cls: `${netValue < 0 ? 'progress-negative book-smith-stats-breakdown-negative' : 'progress-purple book-smith-stats-breakdown-positive'} book-smith-stats-breakdown-value`,
-                    attr: { 'data-breakdown-tooltip': 'Net material', 'aria-label': 'Net material' },
-                    text: this.getBreakdownValueText(netValue)
-                });
-                breakdown.createEl('span', { text: ' | ' });
-                breakdown.createEl('span', {
-                    cls: 'progress-negative book-smith-stats-breakdown-value book-smith-stats-breakdown-negative',
-                    attr: { 'data-breakdown-tooltip': 'Old material removed', 'aria-label': 'Old material removed' },
-                    text: this.getBreakdownValueText(breakdownValues.negative, false, true)
-                });
-            } else {
-                breakdown.createEl('span', {
-                    cls: 'progress-purple book-smith-stats-breakdown-value book-smith-stats-breakdown-positive',
-                    attr: { 'data-breakdown-tooltip': breakdownLabels.positive, 'aria-label': breakdownLabels.positive },
-                    text: this.getBreakdownValueText(breakdownValues.positive, true)
-                });
-                breakdown.createEl('span', { text: ' | ' });
-                breakdown.createEl('span', {
-                    cls: 'progress-negative book-smith-stats-breakdown-value book-smith-stats-breakdown-negative',
-                    attr: { 'data-breakdown-tooltip': breakdownLabels.negative, 'aria-label': breakdownLabels.negative },
-                    text: this.getBreakdownValueText(breakdownValues.negative, false, true)
-                });
-            }
-            breakdown.createEl('span', { text: ')' });
-        }
-
-        const commentWrap = details.createDiv({ cls: 'book-smith-stats-comment-wrap' });
-        const commentLabelText = this.statsPeriodMode === 'day'
-            ? i18n.t('DAY_COMMENT')
-            : `${this.getSelectedPeriodLabel(selectedDate)} notes`;
-        const placeholderText = this.statsPeriodMode === 'day'
-            ? i18n.t('DAY_COMMENT_PLACEHOLDER')
-            : `Write a note for this ${this.statsPeriodMode}...`;
-
-        commentWrap.createEl('label', { cls: 'book-smith-stats-comment-label', text: commentLabelText });
-        const commentInput = commentWrap.createEl('textarea', {
-            cls: 'book-smith-stats-comment-input',
-            attr: { placeholder: placeholderText }
-        });
-        commentInput.value = selectedComment;
-
-        const saveCommentBtn = commentWrap.createEl('button', {
-            cls: 'book-smith-stats-comment-save',
-            text: i18n.t('SAVE_DAY_COMMENT')
-        });
-        saveCommentBtn.addEventListener('click', async () => {
-            await this.saveSelectedPeriodComment(commentInput.value, anchorIso);
-        });
-    }
-
-    private async saveSelectedPeriodComment(comment: string, anchorIso: string) {
+    public async saveSelectedPeriodComment(comment: string, anchorIso: string) {
         const trimmedComment = comment.trim();
         if (this.statsPeriodMode === 'day') {
             this.plugin.sharedDataManager.setComment(this.selectedStatsDate, trimmedComment);
@@ -1384,7 +1262,7 @@ export class ToolView extends ItemView {
         return `${value}`;
     }
 
-    private getSelectedDayMetricText(value: number): string {
+    public getSelectedDayMetricText(value: number): string {
         if (this.statsDisplayMode === 'pomodoros') {
             return `${this.formatPomodoros(value)}`;
         }
@@ -1425,7 +1303,7 @@ export class ToolView extends ItemView {
         return this.getRawWritingMetric(entry);
     }
 
-    private getDisplayedBreakdown(entry: DailyProgressEntry): { positive: number; negative: number } {
+    public getDisplayedBreakdown(entry: DailyProgressEntry): { positive: number; negative: number } {
         if (this.statsWritingDisplayMode === 'raw') {
             return {
                 positive: entry.words_added ?? entry.positive_change ?? 0,
@@ -1441,7 +1319,7 @@ export class ToolView extends ItemView {
         };
     }
 
-    private getMainMetricForDetails(currentMetric: number, progress: DailyProgressEntry | null): number {
+    public getMainMetricForDetails(currentMetric: number, progress: DailyProgressEntry | null): number {
         if (this.statsDisplayMode !== 'words' && this.statsDisplayMode !== 'pages') {
             return currentMetric;
         }
@@ -1457,14 +1335,14 @@ export class ToolView extends ItemView {
         return progress.net_change || 0;
     }
 
-    private getMainMetricHoverLabel(): string {
+    public getMainMetricHoverLabel(): string {
         if (this.statsWritingDisplayMode === 'daily-output') {
             return 'New material added';
         }
         return 'Net material';
     }
 
-    private getBreakdownHoverLabels(): { positive: string; negative: string } {
+    public getBreakdownHoverLabels(): { positive: string; negative: string } {
         if (this.statsWritingDisplayMode === 'raw') {
             const unit = this.statsDisplayMode === 'pages' ? 'pages' : 'words';
             return {
@@ -1483,11 +1361,11 @@ export class ToolView extends ItemView {
         return Boolean(this.statsDailyProgress[dateKey]);
     }
 
-    private hasProgressActivity(entry: DailyProgressEntry): boolean {
+    public hasProgressActivity(entry: DailyProgressEntry): boolean {
         return entry.positive_change !== 0 || entry.negative_change !== 0 || entry.net_change !== 0;
     }
 
-    private getPeriodAnchorDate(anchorDate: Date): Date {
+    public getPeriodAnchorDate(anchorDate: Date): Date {
         if (this.statsPeriodMode === 'week') {
             const day = anchorDate.getDate();
             const startDay = day <= 7 ? 1 : day <= 14 ? 8 : day <= 21 ? 15 : 22;
@@ -1505,7 +1383,7 @@ export class ToolView extends ItemView {
         return new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate());
     }
 
-    private getProgressForSelectedPeriod(anchorDate: Date): DailyProgressEntry | null {
+    public getProgressForSelectedPeriod(anchorDate: Date): DailyProgressEntry | null {
         if (this.statsPeriodMode === 'day') {
             return this.statsDailyProgress[this.toLocalISODate(anchorDate)] || null;
         }
@@ -1560,11 +1438,11 @@ export class ToolView extends ItemView {
         return total;
     }
 
-    private getCommentStorageKey(anchorIso: string): string {
+    public getCommentStorageKey(anchorIso: string): string {
         return `${this.statsPeriodMode}|${anchorIso}`;
     }
 
-    private getBreakdownValueText(value: number, forcePlus = false, forceMinus = false): string {
+    public getBreakdownValueText(value: number, forcePlus = false, forceMinus = false): string {
         const numeric = this.statsDisplayMode === 'pages' ? value / this.wordsPerPage : value;
         const absValue = Math.abs(numeric);
         const formatted = Number.isInteger(absValue)
@@ -1593,19 +1471,19 @@ export class ToolView extends ItemView {
         return `${hours}:${String(minutes).padStart(2, '0')}`;
     }
 
-    private toLocalISODate(date: Date): string {
+    public toLocalISODate(date: Date): string {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }
 
-    private parseLocalISODate(dateStr: string): Date {
+    public parseLocalISODate(dateStr: string): Date {
         const [year, month, day] = dateStr.split('-').map(Number);
         return new Date(year, (month || 1) - 1, day || 1);
     }
 
-    private shiftViewPeriod(direction: number) {
+    public shiftViewPeriod(direction: number) {
         if (this.statsPeriodMode === 'year') {
             this.statsViewMonth = new Date(this.statsViewMonth.getFullYear() + (direction * 10), 0, 1);
             return;
@@ -1619,7 +1497,7 @@ export class ToolView extends ItemView {
         this.statsViewMonth = new Date(this.statsViewMonth.getFullYear(), this.statsViewMonth.getMonth() + direction, 1);
     }
 
-    private getMetricForPeriod(anchorDate: Date): number {
+    public getMetricForPeriod(anchorDate: Date): number {
         if (this.statsDisplayMode === 'pomodoros' || this.statsDisplayMode === 'hours') {
             return this.getPomodorosForPeriod(anchorDate);
         }
@@ -1713,7 +1591,7 @@ export class ToolView extends ItemView {
         return total;
     }
 
-    private getSelectedPeriodLabel(anchorDate: Date): string {
+    public getSelectedPeriodLabel(anchorDate: Date): string {
         if (this.statsPeriodMode === 'day') {
             return anchorDate.toLocaleDateString();
         }
