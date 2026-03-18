@@ -1,3 +1,4 @@
+import { ToolsViewToolbox } from './ToolsViewToolbox';
 import { DebugStatsModal } from '../modals/DebugStatsModal';
 import { ItemView, Notice, TFile, TFolder, WorkspaceLeaf, setIcon } from 'obsidian';
 import { FocusToolView } from '../components/FocusToolView';
@@ -7,6 +8,7 @@ import { BookSelectionModal } from '../modals/BookSelectionModal';
 import { Book } from '../types/book';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
+import { ToolsViewStats } from './ToolsViewStats';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -19,6 +21,7 @@ type DailyProgressEntry = {
 };
 
 export class ToolView extends ItemView {
+            public toolbox: ToolsViewToolbox | undefined;
         // Opens the debug stats modal for a given date
         private openDebugStatsPopup(date: string) {
             const book = this.statsBooks.find(b => b.basic.uuid === this.statsSourceBookId);
@@ -28,38 +31,40 @@ export class ToolView extends ItemView {
                 this.refresh();
             }).open();
         }
-    private normalView: HTMLElement | null = null;
-    private focusView: FocusToolView | null = null;
-    private isNavigatorMode = false;
-    private navigatorBook: Book | null = null;
-    private navigatorFolderPath: string | null = null;
-    private navigatorFiles: TFile[] = [];
-    private navigatorEventsBound = false;
-    private navigatorHoverTriggeredPath: string | null = null;
-    private statsViewMonth: Date = new Date();
-    private selectedStatsDate: string = getLogicalDayISODate(new Date());
-    private statsDailyWords: Record<string, number> = {};
-    private statsDailyProgress: Record<string, DailyProgressEntry> = {};
-    private statsDailyFocusMinutes: Record<string, number> = {};
-    private statsDailyComments: Record<string, string> = {};
-    private statsPeriodComments: Record<string, string> = {};
-    private statsBooks: Book[] = [];
-    private statsSourceBookId: string | 'global' = 'global';
-    private statsDisplayMode: 'words' | 'pages' | 'pomodoros' | 'hours' = 'words';
-    private statsWritingDisplayMode: 'new-material-net' | 'daily-output' | 'raw' = 'new-material-net';
-    private statsPeriodMode: 'day' | 'week' | 'month' | 'year' = 'day';
-    private wordsPerPage = 250;
-    private statsSettingsOpen = false;
-    private statsPeriodSettingsOpen = false;
-    private statsSourceMenuOpen = false;
-    private statsYearEditing = false;
-    private statsRefreshTimer: number | null = null;
-    private statsProgressMenuEl: HTMLElement | null = null;
-    private statsProgressMenuOutsideHandler: ((e: MouseEvent) => void) | null = null;
-    private statsRichTooltipEl: HTMLElement | null = null;
+    public normalView: HTMLElement | null = null;
+    public focusView: FocusToolView | null = null;
+    public isNavigatorMode = false;
+    public navigatorBook: Book | null = null;
+    public navigatorFolderPath: string | null = null;
+    public navigatorFiles: TFile[] = [];
+    public navigatorEventsBound = false;
+    public navigatorHoverTriggeredPath: string | null = null;
+    public statsViewMonth: Date = new Date();
+    public selectedStatsDate: string = getLogicalDayISODate(new Date());
+    public statsDailyWords: Record<string, number> = {};
+    public statsDailyProgress: Record<string, DailyProgressEntry> = {};
+    public statsDailyFocusMinutes: Record<string, number> = {};
+    public statsDailyComments: Record<string, string> = {};
+    public statsPeriodComments: Record<string, string> = {};
+    public statsBooks: Book[] = [];
+    public statsSourceBookId: string | 'global' = 'global';
+    public statsDisplayMode: 'words' | 'pages' | 'pomodoros' | 'hours' = 'words';
+    public statsWritingDisplayMode: 'new-material-net' | 'daily-output' | 'raw' = 'new-material-net';
+    public statsPeriodMode: 'day' | 'week' | 'month' | 'year' = 'day';
+    public wordsPerPage = 250;
+    public statsSettingsOpen = false;
+    public statsPeriodSettingsOpen = false;
+    public statsSourceMenuOpen = false;
+    public statsYearEditing = false;
+    public statsRefreshTimer: number | null = null;
+    public statsProgressMenuEl: HTMLElement | null = null;
+    public statsProgressMenuOutsideHandler: ((e: MouseEvent) => void) | null = null;
+    public statsRichTooltipEl: HTMLElement | null = null;
+    public statsComponent: ToolsViewStats;
 
-    constructor(leaf: WorkspaceLeaf, private plugin: BookSmithPlugin) {
+    constructor(leaf: WorkspaceLeaf, public plugin: BookSmithPlugin) {
         super(leaf);
+        this.statsComponent = new ToolsViewStats(this);
     }
 
     // View basic configuration
@@ -74,7 +79,12 @@ export class ToolView extends ItemView {
         container.addClass('book-smith-tools-view');
         this.normalView = container as HTMLElement;
         this.bindNavigatorEvents();
-        this.createNormalView(container as HTMLElement);
+        // Render header first
+        this.createHeader(container as HTMLElement);
+        // Create a separate actions container below the header
+        const actionsContainer = container.createDiv({ cls: 'book-smith-toolbox-actions' });
+        this.toolbox = new ToolsViewToolbox(this);
+        this.toolbox.render(actionsContainer);
     }
 
     // View refresh method
@@ -98,10 +108,14 @@ export class ToolView extends ItemView {
     }
 
     // Create main view
-    private createNormalView(container: HTMLElement) {
+    public createNormalView(container: HTMLElement) {
         this.isNavigatorMode = false;
-        this.createHeader(container);
-        this.createPrimaryActions(container);
+        this.createHeader(container as HTMLElement);
+        const actionsContainer = container.createDiv({ cls: 'book-smith-toolbox-actions' });
+        if (!this.toolbox) {
+            this.toolbox = new ToolsViewToolbox(this);
+        }
+        this.toolbox.render(actionsContainer);
     }
 
     // Create header
@@ -142,7 +156,7 @@ export class ToolView extends ItemView {
     }
 
     // Focus mode related
-    private enterFocusMode() {
+    public enterFocusMode() {
         if (!this.normalView) return;
         this.isNavigatorMode = false;
         this.normalView.empty();
@@ -163,12 +177,12 @@ export class ToolView extends ItemView {
     }
 
     // Method to enter typography mode
-    private enterTypographyMode() {
+    public enterTypographyMode() {
         this.isNavigatorMode = false;
         new BookSelectionModal(this.app, this.plugin).open();
     }
 
-    private async enterStatisticsMode() {
+    public async enterStatisticsMode() {
         if (!this.normalView) return;
 
         this.isNavigatorMode = false;
@@ -186,7 +200,7 @@ export class ToolView extends ItemView {
         await this.refreshStatsSources();
 
         this.normalView.empty();
-        this.renderStatisticsView(this.normalView);
+        this.statsComponent.renderStatisticsView(this.normalView);
     }
 
     private bindNavigatorEvents() {
@@ -259,7 +273,7 @@ export class ToolView extends ItemView {
         this.redrawNavigatorView();
     }
 
-    private async enterNavigatorMode() {
+    public async enterNavigatorMode() {
         if (!this.normalView) return;
 
         this.isNavigatorMode = true;
@@ -407,7 +421,7 @@ export class ToolView extends ItemView {
         });
     }
 
-    private renderNavigatorSetup(container: HTMLElement) {
+    public renderNavigatorSetup(container: HTMLElement) {
         const setup = container.createDiv({ cls: 'book-smith-navigator-setup' });
         setup.createEl('p', { text: i18n.t('NAVIGATOR_NOT_SET_TITLE') });
         setup.createEl('p', {
@@ -441,7 +455,7 @@ export class ToolView extends ItemView {
         }).open();
     }
 
-    private redrawNavigatorView() {
+    public redrawNavigatorView() {
         if (!this.normalView || !this.isNavigatorMode) return;
         this.normalView.empty();
         this.renderNavigatorView(this.normalView);
@@ -564,65 +578,8 @@ export class ToolView extends ItemView {
         };
     }
 
-    private renderStatisticsView(container: HTMLElement) {
-        const statsView = container.createDiv({ cls: 'book-smith-stats-view' });
 
-        const header = statsView.createDiv({ cls: 'book-smith-stats-header' });
-        const backButton = header.createEl('button', { cls: 'book-smith-stats-back-btn' });
-        setIcon(backButton, 'arrow-left');
-        backButton.appendChild(createSpan({ text: ` ${i18n.t('BACK_TO_TOOLBOX')}` }));
-        backButton.addEventListener('click', () => {
-            if (!this.normalView) return;
-            this.normalView.empty();
-            this.createNormalView(this.normalView);
-        });
-
-        const settingsButton = header.createEl('button', {
-            cls: `book-smith-stats-settings-btn${this.statsSettingsOpen ? ' is-active' : ''}`,
-            attr: { 'aria-label': i18n.t('DISPLAY_MODE') }
-        });
-        settingsButton.createSpan({ text: '⚙' });
-        settingsButton.addEventListener('click', () => {
-            const nextOpen = !this.statsSettingsOpen;
-            this.statsSettingsOpen = nextOpen;
-            if (nextOpen) {
-                this.statsPeriodSettingsOpen = false;
-            }
-            this.redrawStatisticsView();
-        });
-
-        const periodButton = header.createEl('button', {
-            cls: `book-smith-stats-period-btn${this.statsPeriodSettingsOpen ? ' is-active' : ''}`,
-            attr: { 'aria-label': i18n.t('STATS_PERIOD') }
-        });
-        periodButton.createSpan({ text: '📅' });
-        periodButton.addEventListener('click', () => {
-            const nextOpen = !this.statsPeriodSettingsOpen;
-            this.statsPeriodSettingsOpen = nextOpen;
-            if (nextOpen) {
-                this.statsSettingsOpen = false;
-            }
-            this.redrawStatisticsView();
-        });
-
-        if (this.statsBooks.length === 0) {
-            statsView.createEl('p', { cls: 'book-smith-stats-empty', text: i18n.t('NO_ACTIVE_BOOK') });
-            return;
-        }
-
-        if (this.statsSettingsOpen) {
-            this.renderStatsSettingsPanel(statsView);
-        }
-        if (this.statsPeriodSettingsOpen) {
-            this.renderStatsPeriodPanel(statsView);
-        }
-
-        this.renderStatsSourceRow(statsView);
-        this.renderCalendar(statsView);
-        this.renderSelectedDayStats(statsView);
-    }
-
-    private renderStatsSourceRow(container: HTMLElement) {
+    public renderStatsSourceRow(container: HTMLElement) {
         const row = container.createDiv({ cls: 'book-smith-stats-source-row' });
 
         row.createEl('div', {
@@ -676,7 +633,7 @@ export class ToolView extends ItemView {
         return book?.basic.title || i18n.t('GLOBAL_STATS');
     }
 
-    private renderStatsPeriodPanel(container: HTMLElement) {
+    public renderStatsPeriodPanel(container: HTMLElement) {
         const panel = container.createDiv({ cls: 'book-smith-stats-settings-panel is-active-period' });
         const row = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
         row.createEl('label', { text: i18n.t('STATS_PERIOD') });
@@ -693,7 +650,7 @@ export class ToolView extends ItemView {
         });
     }
 
-    private renderStatsSettingsPanel(container: HTMLElement) {
+    public renderStatsSettingsPanel(container: HTMLElement) {
         const panel = container.createDiv({ cls: 'book-smith-stats-settings-panel is-active-display' });
 
         const modeRow = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
@@ -869,7 +826,7 @@ export class ToolView extends ItemView {
         await this.plugin.saveSettings();
     }
 
-    private renderCalendar(container: HTMLElement) {
+    public renderCalendar(container: HTMLElement) {
         const calendar = container.createDiv({ cls: 'book-smith-stats-calendar' });
         const nav = calendar.createDiv({ cls: 'book-smith-stats-calendar-nav' });
 
@@ -1272,7 +1229,7 @@ export class ToolView extends ItemView {
         return this.selectedStatsDate === anchorIso;
     }
 
-    private renderSelectedDayStats(container: HTMLElement) {
+    public renderSelectedDayStats(container: HTMLElement) {
         const selectedDate = this.parseLocalISODate(this.selectedStatsDate);
         const selectedMetric = this.getMetricForPeriod(selectedDate);
         const anchorDate = this.getPeriodAnchorDate(selectedDate);
@@ -1396,11 +1353,11 @@ export class ToolView extends ItemView {
         this.redrawStatisticsView();
     }
 
-    private redrawStatisticsView() {
+    public redrawStatisticsView() {
         if (!this.normalView) return;
         this.closeStatsProgressMenu();
         this.normalView.empty();
-        this.renderStatisticsView(this.normalView);
+        this.statsComponent.renderStatisticsView(this.normalView);
     }
 
     private toISODate(date: Date): string {
@@ -1781,6 +1738,5 @@ export class ToolView extends ItemView {
             this.focusView.remove();
             this.focusView = null;
         }
-    
     }
 }
