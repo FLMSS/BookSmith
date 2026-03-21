@@ -1,4 +1,4 @@
-import { Plugin, Notice } from 'obsidian';
+import { Plugin, Notice, Editor, MarkdownView } from 'obsidian';
 import { BookSmithView } from './views/BookSmithView';
 import { ToolView } from './views/ToolsView';
 import { BookSmithSettingTab } from './settings/SettingTab';
@@ -111,6 +111,24 @@ export default class BookSmithPlugin extends Plugin {
             }
         });
 
+        // Old deletion commands (explicit user-triggered only)
+        this.addCommand({
+            id: 'delete-old-content-backward',
+            name: 'Delete as old content (backward)',
+            editorCallback: (editor: Editor, view: MarkdownView) => {
+                this.executeOldDeletion(editor, 'backward');
+            },
+            hotkeys: [{ modifiers: ['Alt'], key: 'Backspace' }]
+        });
+        this.addCommand({
+            id: 'delete-old-content-forward',
+            name: 'Delete as old content (forward)',
+            editorCallback: (editor: Editor, view: MarkdownView) => {
+                this.executeOldDeletion(editor, 'forward');
+            },
+            hotkeys: [{ modifiers: ['Alt'], key: 'Delete' }]
+        });
+
         // 添加一个功能按钮用于打开所有面板
         this.addRibbonIcon('book-open', i18n.t('OPEN_BOOK_PANEL'), () => {
             activateView(this.app, 'book-smith-view', 'left');
@@ -121,6 +139,58 @@ export default class BookSmithPlugin extends Plugin {
     onunload() {
         // 卸载插件时的清理工作
         this.focusHeaderIndicator?.destroy();
+    }
+
+    private executeOldDeletion(editor: Editor, direction: 'backward' | 'forward'): void {
+        // Determine the deletion range first, then count words and record BEFORE editing.
+        let from: { line: number; ch: number };
+        let to: { line: number; ch: number };
+
+        if (editor.somethingSelected()) {
+            from = editor.getCursor('from');
+            to = editor.getCursor('to');
+        } else {
+            const cursor = editor.getCursor();
+            const line = editor.getLine(cursor.line);
+
+            if (direction === 'backward') {
+                to = cursor;
+                if (cursor.ch === 0) {
+                    if (cursor.line === 0) return;
+                    const prevLine = editor.getLine(cursor.line - 1);
+                    from = { line: cursor.line - 1, ch: prevLine.length };
+                } else {
+                    const textBefore = line.slice(0, cursor.ch);
+                    const match = textBefore.match(/\S+\s*$/);
+                    const deleteFrom = match ? cursor.ch - match[0].length : cursor.ch - 1;
+                    from = { line: cursor.line, ch: deleteFrom };
+                }
+            } else {
+                from = cursor;
+                if (cursor.ch >= line.length) {
+                    if (cursor.line >= editor.lineCount() - 1) return;
+                    to = { line: cursor.line + 1, ch: 0 };
+                } else {
+                    const textAfter = line.slice(cursor.ch);
+                    const match = textAfter.match(/^\s*\S+/);
+                    const deleteLen = match ? match[0].length : 1;
+                    to = { line: cursor.line, ch: cursor.ch + deleteLen };
+                }
+            }
+        }
+
+        // Count words in the text about to be deleted and record old deletion
+        // BEFORE the editor operation — no timing dependency on handleEditorUpdate.
+        const textToDelete = editor.getRange(from, to);
+        const wordCount = this.statsManager.countWords(textToDelete);
+        this.statsManager.recordExplicitOldDeletion(wordCount);
+
+        // Now perform the actual deletion
+        editor.replaceRange('', from, to);
+
+        if (wordCount > 0) {
+            new Notice(`Removed ${wordCount} word${wordCount !== 1 ? 's' : ''} as old material`, 2000);
+        }
     }
 
     async loadSettings() {

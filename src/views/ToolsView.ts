@@ -1311,11 +1311,22 @@ export class ToolView extends ItemView {
             };
         }
 
+        if (this.statsWritingDisplayMode === 'daily-output') {
+            // Daily output breakdown: net material vs old material removed
+            return {
+                positive: entry.net_change || 0,
+                negative: -(entry.old_deletions || 0)
+            };
+        }
+
         // New Material (Net) mode
-        const net = entry.net_change || 0;
+        const wordsAdded = entry.words_added ?? entry.positive_change ?? 0;
+        const iterationDeletions = entry.iteration_deletions || 0;
+        const newMaterial = wordsAdded - iterationDeletions;
+        const oldDeletions = entry.old_deletions || 0;
         return {
-            positive: Math.max(0, net),
-            negative: Math.min(0, net)
+            positive: newMaterial,
+            negative: -oldDeletions
         };
     }
 

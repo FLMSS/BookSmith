@@ -79,6 +79,7 @@ export class FocusHeaderIndicator {
     private readonly onPopoverEnter = () => this.clearHideTimer();
     private readonly onPopoverLeave = () => this.scheduleHidePopover();
     private readonly onFocusUpdate = () => this.updateUi();
+    private statsChangeUnsubscribe: (() => void) | null = null;
 
     constructor(private plugin: BookSmithPlugin) {}
 
@@ -87,11 +88,9 @@ export class FocusHeaderIndicator {
         this.plugin.focusManager.onUpdate(this.onFocusUpdate);
         this.plugin.registerEvent(this.plugin.app.workspace.on('active-leaf-change', () => this.attachToActiveView()));
         this.plugin.registerEvent(this.plugin.app.workspace.on('layout-change', () => this.attachToActiveView()));
-        this.plugin.registerEvent(this.plugin.app.vault.on('modify', () => {
-            if (this.displayMode === 'goal') {
-                this.updateUi();
-            }
-        }));
+        this.statsChangeUnsubscribe = this.plugin.statsManager.onStatsChange(() => {
+            this.updateUi();
+        });
 
         window.setTimeout(() => {
             this.attachToActiveView();
@@ -100,6 +99,10 @@ export class FocusHeaderIndicator {
     }
 
     destroy(): void {
+        if (this.statsChangeUnsubscribe) {
+            this.statsChangeUnsubscribe();
+            this.statsChangeUnsubscribe = null;
+        }
         this.plugin.focusManager.removeUpdateListener(this.onFocusUpdate);
         this.detachTarget();
         if (this.popoverEl?.parentElement) {
