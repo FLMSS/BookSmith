@@ -10,8 +10,9 @@ interface StatsOp {
     type: 'add' | 'delete' | 'delete-old';
     /** Total words in this operation. */
     words: number;
-    /** For 'delete' only: how many of the deleted words were iteration (from today's new). */
-    iterationWords?: number;
+    /** For mixed old-deletion: how many words were classified as old vs normal. */
+    oldWords?: number;
+    normalWords?: number;
 }
 
 interface ProjectMoveTracker {
@@ -19,10 +20,7 @@ interface ProjectMoveTracker {
     pendingPastedWords: number;
     pendingAddedWords: number;
     pendingRemovedWords: number;
-    pendingIterationDeletions: number;
     pendingOldDeletions: number;
-    /** Tracks how many of today's words_added are still "live" (not yet deleted). */
-    newWordsBalance: number;
     /** Operation stack for deterministic undo reversal. */
     opStack: StatsOp[];
 }
@@ -156,7 +154,6 @@ export class BookStatsManager {
         const hasTrackedChanges =
             tracker.pendingAddedWords !== 0 ||
             tracker.pendingRemovedWords !== 0 ||
-            tracker.pendingIterationDeletions !== 0 ||
             tracker.pendingOldDeletions !== 0;
         const rawAdded = hasTrackedChanges ? tracker.pendingAddedWords : Math.max(0, delta);
         const rawRemoved = hasTrackedChanges ? tracker.pendingRemovedWords : Math.max(0, -delta);
@@ -185,10 +182,9 @@ export class BookStatsManager {
         }
 
         // 更新每日净进度明细（新增、删减、净值）
-        const iterationDeletionsDelta = tracker.pendingIterationDeletions;
         const oldDeletionsDelta = tracker.pendingOldDeletions;
         const dailyProgress = { ...(stats.daily_progress || {}) };
-        if (delta !== 0 || rawAdded !== 0 || rawRemoved !== 0 || iterationDeletionsDelta !== 0 || oldDeletionsDelta !== 0) {
+        if (delta !== 0 || rawAdded !== 0 || rawRemoved !== 0 || oldDeletionsDelta !== 0) {
             const previous = dailyProgress[today] || {
                 positive_change: 0,
                 negative_change: 0,
@@ -204,6 +200,8 @@ export class BookStatsManager {
             const netChange = positiveChange + negativeChange;
             const wordsAdded = Math.max(0, (previous.words_added || 0) + wordsAddedDelta);
             const wordsDeleted = Math.max(0, (previous.words_deleted || 0) + wordsDeletedDelta);
+            // iteration_deletions = normal deletions (not old). Logged for raw stats.
+            const iterationDeletionsDelta = Math.max(0, wordsDeletedDelta - oldDeletionsDelta);
             const iterationDeletions = Math.max(0, (previous.iteration_deletions || 0) + iterationDeletionsDelta);
             const oldDeletions = Math.max(0, (previous.old_deletions || 0) + oldDeletionsDelta);
 
@@ -220,7 +218,6 @@ export class BookStatsManager {
 
         tracker.pendingAddedWords = 0;
         tracker.pendingRemovedWords = 0;
-        tracker.pendingIterationDeletions = 0;
         tracker.pendingOldDeletions = 0;
 
         // 计算实际有写作记录的天数和平均字数
@@ -363,20 +360,14 @@ export class BookStatsManager {
 
         switch (op.type) {
             case 'add':
-                // Undo of addition: reverse words_added, reduce balance
                 tracker.pendingAddedWords -= op.words;
-                tracker.newWordsBalance = Math.max(0, tracker.newWordsBalance - op.words);
                 break;
             case 'delete':
-                // Undo of normal deletion: reverse words_deleted + iteration portion, restore balance
                 tracker.pendingRemovedWords -= op.words;
-                tracker.pendingIterationDeletions -= (op.iterationWords || 0);
-                tracker.newWordsBalance += (op.iterationWords || 0);
                 break;
             case 'delete-old':
-                // Undo of old deletion: reverse words_deleted + old_deletions
                 tracker.pendingRemovedWords -= op.words;
-                tracker.pendingOldDeletions -= op.words;
+                tracker.pendingOldDeletions -= (op.oldWords ?? op.words);
                 break;
         }
     }
@@ -386,44 +377,51 @@ export class BookStatsManager {
 
         if (addedWords > 0) {
             tracker.pendingAddedWords += addedWords;
-            tracker.newWordsBalance += addedWords;
             tracker.opStack.push({ type: 'add', words: addedWords });
         }
 
         if (deletedWords > 0) {
             tracker.pendingRemovedWords += deletedWords;
-
-            // Classify: iteration (from today's new words) vs leftover
-            // old_deletions are NEVER created here — only via explicit command
-            const iterationDeletions = Math.min(tracker.newWordsBalance, deletedWords);
-            tracker.pendingIterationDeletions += iterationDeletions;
-            tracker.newWordsBalance = Math.max(0, tracker.newWordsBalance - deletedWords);
-
-            tracker.opStack.push({ type: 'delete', words: deletedWords, iterationWords: iterationDeletions });
+            tracker.opStack.push({ type: 'delete', words: deletedWords });
         }
-    }
-
-    /**
-     * Record an old deletion from the editor change.
-     * Called when oldDeletionPending flag is set — single atomic opStack entry.
-     */
-    private recordOldDeletion(deletedWords: number): void {
-        const tracker = this.getCurrentProjectTracker();
-        tracker.pendingRemovedWords += deletedWords;
-        tracker.pendingOldDeletions += deletedWords;
-        tracker.opStack.push({ type: 'delete-old', words: deletedWords });
     }
 
     /**
      * Record an explicit old deletion (from user Alt+Backspace/Delete command).
-     * Counts words, pushes a single delete-old op to the opStack, and sets a
-     * flag so handleEditorUpdate skips the resulting editor change.
+     * Caps old_deletions at start_of_day_words; any excess is recorded as a
+     * normal (iteration) deletion.  Returns classification for UI notice.
      */
-    recordExplicitOldDeletion(deletedWords: number): void {
+    recordExplicitOldDeletion(deletedWords: number): { oldWords: number; normalWords: number } {
         this.oldDeletionPending = true; // suppress next handleEditorUpdate
-        if (deletedWords > 0) {
-            this.recordOldDeletion(deletedWords);
+        if (deletedWords <= 0) return { oldWords: 0, normalWords: 0 };
+
+        // Budget: old_deletions can never exceed start_of_day_words.
+        // start_of_day_words = total_words - net_change
+        const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
+        const entry = this.currentBook?.stats?.daily_progress?.[today];
+        const totalWords = this.currentBook?.stats?.total_words ?? 0;
+        const netChange = entry?.net_change ?? 0;
+        const startOfDayWords = totalWords - netChange;
+        const oldDeletionsSoFar = (entry?.old_deletions ?? 0) + this.getCurrentProjectTracker().pendingOldDeletions;
+        const remainingBudget = Math.max(0, startOfDayWords - oldDeletionsSoFar);
+
+        const actualOld = Math.min(deletedWords, remainingBudget);
+        const normalPortion = deletedWords - actualOld;
+
+        // Record as a single atomic operation for clean undo
+        const tracker = this.getCurrentProjectTracker();
+        tracker.pendingRemovedWords += deletedWords;
+        if (actualOld > 0) {
+            tracker.pendingOldDeletions += actualOld;
         }
+        tracker.opStack.push({
+            type: 'delete-old',
+            words: deletedWords,
+            oldWords: actualOld,
+            normalWords: normalPortion
+        });
+
+        return { oldWords: actualOld, normalWords: normalPortion };
     }
 
     /** Public word count for external callers (e.g. old deletion command). */
@@ -526,9 +524,7 @@ export class BookStatsManager {
                 pendingPastedWords: 0,
                 pendingAddedWords: 0,
                 pendingRemovedWords: 0,
-                pendingIterationDeletions: 0,
                 pendingOldDeletions: 0,
-                newWordsBalance: 0,
                 opStack: []
             };
         }
@@ -541,9 +537,7 @@ export class BookStatsManager {
             pendingPastedWords: 0,
             pendingAddedWords: 0,
             pendingRemovedWords: 0,
-            pendingIterationDeletions: 0,
             pendingOldDeletions: 0,
-            newWordsBalance: 0,
             opStack: []
         };
         this.projectMoveTrackers.set(this.currentProjectId, tracker);

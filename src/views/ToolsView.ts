@@ -509,7 +509,9 @@ export class ToolView extends ItemView {
                 negative_change: entry?.negative_change || 0,
                 net_change: entry?.net_change || 0,
                 words_added: entry?.words_added ?? entry?.positive_change ?? 0,
-                words_deleted: fallbackWordsDeleted
+                words_deleted: fallbackWordsDeleted,
+                iteration_deletions: entry?.iteration_deletions || 0,
+                old_deletions: entry?.old_deletions || 0
             };
         });
 
@@ -1311,19 +1313,11 @@ export class ToolView extends ItemView {
             };
         }
 
-        if (this.statsWritingDisplayMode === 'daily-output') {
-            // Daily output breakdown: net material vs old material removed
-            return {
-                positive: entry.net_change || 0,
-                negative: -(entry.old_deletions || 0)
-            };
-        }
-
-        // New Material (Net) mode
-        const wordsAdded = entry.words_added ?? entry.positive_change ?? 0;
-        const iterationDeletions = entry.iteration_deletions || 0;
-        const newMaterial = wordsAdded - iterationDeletions;
+        // Both daily-output and new-material-net use the same formula:
+        // new_material = net_change + old_deletions
+        const netChange = entry.net_change || 0;
         const oldDeletions = entry.old_deletions || 0;
+        const newMaterial = netChange + oldDeletions;
         return {
             positive: newMaterial,
             negative: -oldDeletions
@@ -1338,7 +1332,9 @@ export class ToolView extends ItemView {
             return currentMetric;
         }
         if (this.statsWritingDisplayMode === 'daily-output') {
-            return Math.max(0, progress.net_change || 0);
+            // new_material = net_change + old_deletions
+            const newMaterial = (progress.net_change || 0) + (progress.old_deletions || 0);
+            return Math.max(0, newMaterial);
         }
         if (this.statsWritingDisplayMode === 'raw') {
             return (progress.words_added ?? progress.positive_change ?? 0) - (progress.words_deleted ?? Math.abs(progress.negative_change || 0));

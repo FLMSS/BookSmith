@@ -183,13 +183,17 @@ export default class BookSmithPlugin extends Plugin {
         // BEFORE the editor operation — no timing dependency on handleEditorUpdate.
         const textToDelete = editor.getRange(from, to);
         const wordCount = this.statsManager.countWords(textToDelete);
-        this.statsManager.recordExplicitOldDeletion(wordCount);
+        const { oldWords, normalWords } = this.statsManager.recordExplicitOldDeletion(wordCount);
 
         // Now perform the actual deletion
         editor.replaceRange('', from, to);
 
-        if (wordCount > 0) {
-            new Notice(`Removed ${wordCount} word${wordCount !== 1 ? 's' : ''} as old material`, 2000);
+        if (oldWords > 0 && normalWords === 0) {
+            new Notice(`Removed ${oldWords} word${oldWords !== 1 ? 's' : ''} as old material`, 2000);
+        } else if (oldWords > 0 && normalWords > 0) {
+            new Notice(`Removed ${oldWords} old + ${normalWords} new word${normalWords !== 1 ? 's' : ''} (no old material budget left for ${normalWords})`, 3000);
+        } else if (normalWords > 0) {
+            new Notice(`No old material left to remove — ${normalWords} word${normalWords !== 1 ? 's' : ''} deleted as normal`, 3000);
         }
     }
 
