@@ -87,6 +87,11 @@ export class BookStatsManager {
         }
         return totalCount;
     }
+    /** The current book with up-to-date in-memory stats. */
+    getCurrentBook(): Book | null {
+        return this.currentBook;
+    }
+
     // 添加监听器
     onStatsChange(callback: () => void) {
         this.statsChangeCallbacks.add(callback);

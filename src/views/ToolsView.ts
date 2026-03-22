@@ -57,6 +57,7 @@ export class ToolView extends ItemView {
     public statsSourceMenuOpen = false;
     public statsYearEditing = false;
     public statsRefreshTimer: number | null = null;
+    private statsChangeUnsubscribe: (() => void) | null = null;
     public statsProgressMenuEl: HTMLElement | null = null;
     public statsProgressMenuOutsideHandler: ((e: MouseEvent) => void) | null = null;
     public statsRichTooltipEl: HTMLElement | null = null;
@@ -227,15 +228,21 @@ export class ToolView extends ItemView {
             this.scheduleStatsRefreshForPath(file.path);
             this.scheduleStatsRefreshForPath(oldPath);
         }));
-        this.registerEvent(this.app.vault.on('modify', (file) => {
-            this.scheduleStatsRefreshForPath(file.path);
-        }));
+        // Stats updates come from onStatsChange (fires after stats are persisted).
+        // Uses fast in-memory path — no disk reads.
+        if (!this.statsChangeUnsubscribe) {
+            this.statsChangeUnsubscribe = this.plugin.statsManager.onStatsChange(() => {
+                if (!this.isStatsViewVisible()) return;
+                this.refreshStatsFromMemory();
+                this.redrawStatisticsView();
+            });
+        }
 
         this.navigatorEventsBound = true;
     }
 
     private isStatsViewVisible(): boolean {
-        return Boolean(this.normalView?.querySelector('.book-smith-stats-view'));
+        return Boolean(this.normalView?.hasClass('book-smith-stats-view'));
     }
 
     private scheduleStatsRefreshForPath(path: string): void {
@@ -477,6 +484,58 @@ export class ToolView extends ItemView {
         this.statsDailyComments = dailyComments;
         this.statsPeriodComments = this.plugin.sharedDataManager.getPeriodComments();
         this.statsDailyFocusMinutes = this.loadDailyFocusMinutesData();
+    }
+
+    /**
+     * Fast in-memory stats refresh for the current book.
+     * Reads from statsManager's in-memory book object instead of disk.
+     */
+    private refreshStatsFromMemory(): void {
+        const currentBook = this.plugin.statsManager.getCurrentBook();
+        if (!currentBook) return;
+
+        // Update the in-memory book in statsBooks array
+        const idx = this.statsBooks.findIndex(b => b.basic.uuid === currentBook.basic.uuid);
+        if (idx >= 0) {
+            this.statsBooks[idx] = currentBook;
+        }
+
+        // Rebuild stats data for the view being shown
+        if (this.statsSourceBookId === 'global') {
+            // Re-merge all books (one is now updated in memory)
+            const mergedWords: Record<string, number> = {};
+            const mergedProgress: Record<string, DailyProgressEntry> = {};
+            this.statsBooks.forEach(book => {
+                const dailyProgress = this.getDailyProgressForBook(book);
+                Object.entries(dailyProgress).forEach(([date, entry]) => {
+                    const previous = mergedProgress[date] || {
+                        positive_change: 0, negative_change: 0, net_change: 0,
+                        words_added: 0, words_deleted: 0, iteration_deletions: 0, old_deletions: 0
+                    };
+                    mergedProgress[date] = {
+                        positive_change: previous.positive_change + entry.positive_change,
+                        negative_change: previous.negative_change + entry.negative_change,
+                        net_change: previous.net_change + entry.net_change,
+                        words_added: (previous.words_added || 0) + (entry.words_added || 0),
+                        words_deleted: (previous.words_deleted || 0) + (entry.words_deleted || 0),
+                        iteration_deletions: (previous.iteration_deletions || 0) + (entry.iteration_deletions || 0),
+                        old_deletions: (previous.old_deletions || 0) + (entry.old_deletions || 0)
+                    };
+                    mergedWords[date] = mergedProgress[date].net_change;
+                });
+            });
+            this.statsDailyWords = mergedWords;
+            this.statsDailyProgress = mergedProgress;
+        } else if (this.statsSourceBookId === currentBook.basic.uuid) {
+            const dailyProgress = this.getDailyProgressForBook(currentBook);
+            this.statsDailyWords = Object.fromEntries(
+                Object.entries(dailyProgress).map(([date, entry]) => [date, entry.net_change])
+            );
+            this.statsDailyProgress = dailyProgress;
+            this.statsDailyComments = { ...(currentBook.stats.daily_comments || {}) };
+        }
+
+        this.redrawStatisticsView();
     }
 
     private loadDailyFocusMinutesData(): Record<string, number> {
@@ -1619,6 +1678,10 @@ export class ToolView extends ItemView {
 
     // Override onClose to ensure all views are properly closed
     async onClose() {
+        if (this.statsChangeUnsubscribe) {
+            this.statsChangeUnsubscribe();
+            this.statsChangeUnsubscribe = null;
+        }
         if (this.focusView) {
             this.focusView.remove();
             this.focusView = null;
