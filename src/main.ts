@@ -1,4 +1,4 @@
-import { Plugin, Notice, Editor, MarkdownView } from 'obsidian';
+import { Plugin, Notice, Editor, MarkdownView, TFile } from 'obsidian';
 import { BookSmithView } from './views/BookSmithView';
 import { ToolView } from './views/ToolsView';
 import { BookSmithSettingTab } from './settings/SettingTab';
@@ -15,6 +15,10 @@ import { ThemeManager } from './services/ThemeManager';
 import { SharedDataManager } from './services/SharedDataManager';
 import { FocusHeaderIndicator } from './components/FocusHeaderIndicator';
 import { DEFAULT_DAILY_ROLLOVER_MINUTES, normalizeDailyRolloverMinutes } from './utils/logicalDay';
+import { EditorView } from '@codemirror/view';
+import { SceneNotesManager } from './services/SceneNotesManager';
+import { buildSceneNotesGutter, requestGutterRepaint } from './services/SceneNotesGutter';
+import { SceneNote } from './types/sceneNote';
 
 export default class BookSmithPlugin extends Plugin {
     settings: BookSmithSettings;
@@ -26,6 +30,8 @@ export default class BookSmithPlugin extends Plugin {
     sharedDataManager: SharedDataManager;
     focusManager: FocusManager;
     focusHeaderIndicator: FocusHeaderIndicator;
+    sceneNotesManager: SceneNotesManager;
+    private lastSceneNotesBookId: string | null = null;
 
     async onload() {
         await this.loadSettings();        
@@ -71,9 +77,53 @@ export default class BookSmithPlugin extends Plugin {
             await this.bookManager.migrateProjectFoldersFromMap(legacyProjectFolderMap);
         }
         this.statsManager = new BookStatsManager(this.app, this, this.bookManager);
+        this.sceneNotesManager = new SceneNotesManager(this.app, this);
         this.focusManager = new FocusManager(this);
         this.focusHeaderIndicator = new FocusHeaderIndicator(this);
         this.focusHeaderIndicator.initialize();
+
+        // Register the Scene Notes gutter extension (per-editor).
+        this.registerEditorExtension(
+            buildSceneNotesGutter(this.sceneNotesManager, (note) => {
+                this.openSceneNoteInPanel(note.id);
+            })
+        );
+
+        // Keep the Scene Notes manager's current book in sync with the active book.
+        this.registerEvent(this.app.workspace.on('layout-change', () => {
+            void this.syncSceneNotesActiveBook();
+        }));
+        this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+            void this.syncSceneNotesActiveBook();
+        }));
+        void this.syncSceneNotesActiveBook();
+
+        // Repaint gutters when notes change, and prune stale notes on file modify.
+        this.register(this.sceneNotesManager.onNotesChange(() => {
+            requestGutterRepaint(this.app);
+        }));
+        const pruneTimers = new Map<string, number>();
+        this.registerEvent(this.app.vault.on('modify', (file) => {
+            if (!(file instanceof TFile) || file.extension !== 'md') return;
+            const book = this.sceneNotesManager.getCurrentBook();
+            if (!book) return;
+            const bookPath = `${this.settings.defaultBookPath}/${book.basic.title}`;
+            if (!file.path.startsWith(bookPath + '/')) return;
+            // Debounce per-file: only prune once typing pauses for ~800ms.
+            const prev = pruneTimers.get(file.path);
+            if (prev) window.clearTimeout(prev);
+            const timer = window.setTimeout(async () => {
+                pruneTimers.delete(file.path);
+                try {
+                    const content = await this.app.vault.cachedRead(file);
+                    const lastLine = Math.max(0, content.split('\n').length - 1);
+                    await this.sceneNotesManager.pruneNotesPastEnd(file.path, lastLine);
+                } catch (err) {
+                    console.warn('Scene notes prune failed:', err);
+                }
+            }, 800);
+            pruneTimers.set(file.path, timer);
+        }));
 
         // 注册视图
         this.registerView(
@@ -127,6 +177,16 @@ export default class BookSmithPlugin extends Plugin {
                 this.executeOldDeletion(editor, 'forward');
             },
             hotkeys: [{ modifiers: ['Alt'], key: 'Delete' }]
+        });
+
+        // Scene Notes — add a note on the paragraph under the cursor (Ctrl+J).
+        this.addCommand({
+            id: 'add-scene-note',
+            name: 'Add scene note to current paragraph',
+            editorCallback: (editor: Editor, view: MarkdownView) => {
+                void this.addSceneNoteAtCursor(editor, view);
+            },
+            hotkeys: [{ modifiers: ['Mod'], key: 'j' }]
         });
 
         // 添加一个功能按钮用于打开所有面板
@@ -312,5 +372,131 @@ export default class BookSmithPlugin extends Plugin {
         const comments = (this.settings as any)?.sharedPeriodComments;
         if (!comments || typeof comments !== 'object') return {};
         return comments as Record<string, string>;
+    }
+
+    // --- Scene Notes integration ---
+
+    private async syncSceneNotesActiveBook(): Promise<void> {
+        const bookId = this.settings.lastBookId || null;
+        if (bookId === this.lastSceneNotesBookId) return;
+        this.lastSceneNotesBookId = bookId;
+        const book = bookId ? await this.bookManager.getBookById(bookId) : null;
+        await this.sceneNotesManager.setCurrentBook(book);
+        requestGutterRepaint(this.app);
+    }
+
+    private async addSceneNoteAtCursor(editor: Editor, view: MarkdownView): Promise<void> {
+        const file = view.file;
+        if (!file) {
+            new Notice('No file is open');
+            return;
+        }
+        const book = this.sceneNotesManager.getCurrentBook();
+        if (!book) {
+            new Notice('Open a book first to add scene notes');
+            return;
+        }
+        const bookPath = `${this.settings.defaultBookPath}/${book.basic.title}`;
+        if (!file.path.startsWith(bookPath + '/')) {
+            new Notice('Scene notes only work inside the active book');
+            return;
+        }
+
+        const cursor = editor.getCursor();
+        const docText = editor.getValue();
+        const { fromLine, toLine } = SceneNotesManager.detectParagraphRange(docText, cursor.line);
+
+        // One note per paragraph — reject if an existing note overlaps.
+        const existing = this.sceneNotesManager.paragraphHasNote(file.path, fromLine, toLine);
+        if (existing) {
+            new Notice('This paragraph already has a scene note');
+            this.openSceneNoteInPanel(existing.id);
+            return;
+        }
+
+        const note = await this.sceneNotesManager.createNote({
+            filePath: file.path,
+            fromLine,
+            toLine,
+            content: ''
+        });
+        new Notice('Scene note added');
+        this.openSceneNoteInPanel(note.id);
+    }
+
+    /**
+     * Switch the ToolsView right pane to the Scene Notes editor for the given note id.
+     * Creates the tool panel if it isn't open.
+     */
+    public openSceneNoteInPanel(noteId: string): void {
+        const showNote = (tool: ToolView) => {
+            tool.openSceneNoteEditor?.(noteId);
+        };
+        const leaves = this.app.workspace.getLeavesOfType('book-smith-tool');
+        if (leaves.length === 0) {
+            void (async () => {
+                await activateView(this.app, 'book-smith-tool', 'right');
+                // Defer a tick so the view finishes its onOpen render pass.
+                window.setTimeout(() => {
+                    const afterLeaves = this.app.workspace.getLeavesOfType('book-smith-tool');
+                    const leaf = afterLeaves[0];
+                    if (leaf?.view instanceof ToolView) showNote(leaf.view);
+                }, 50);
+            })();
+            return;
+        }
+        const leaf = leaves[0];
+        if (leaf.view instanceof ToolView) showNote(leaf.view);
+    }
+
+    /**
+     * Focus an editor on a note's paragraph: open the file if needed, scroll to
+     * the from-line, center it, and briefly highlight.
+     */
+    public async focusEditorOnNote(note: SceneNote): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(note.filePath);
+        if (!(file instanceof TFile)) {
+            new Notice('File for this scene note is missing');
+            return;
+        }
+        const leaf = this.app.workspace.getLeaf(false);
+        await leaf.openFile(file, { active: true });
+
+        const view = leaf.view as MarkdownView;
+        const cm = (view as any)?.editor?.cm as EditorView | undefined;
+        if (!cm) return;
+
+        const startLineNum = Math.min(Math.max(note.fromLine + 1, 1), cm.state.doc.lines);
+        const endLineNum = Math.min(Math.max(note.toLine + 1, 1), cm.state.doc.lines);
+        const startBlock = cm.state.doc.line(startLineNum);
+        const endBlock = cm.state.doc.line(endLineNum);
+
+        cm.dispatch({
+            selection: { anchor: startBlock.from },
+            effects: EditorView.scrollIntoView(startBlock.from, { y: 'center' })
+        });
+
+        // Flash a highlight on the paragraph briefly.
+        try {
+            const fromCoords = cm.coordsAtPos(startBlock.from);
+            const toCoords = cm.coordsAtPos(endBlock.to);
+            if (fromCoords) {
+                const flash = document.createElement('div');
+                flash.addClass('book-smith-scene-note-flash');
+                const scroller = cm.scrollDOM;
+                const scrollerRect = scroller.getBoundingClientRect();
+                const top = fromCoords.top - scrollerRect.top + scroller.scrollTop;
+                const height = toCoords
+                    ? Math.max(24, toCoords.bottom - fromCoords.top + 2)
+                    : 24;
+                flash.style.top = `${top}px`;
+                flash.style.height = `${height}px`;
+                scroller.appendChild(flash);
+                window.setTimeout(() => flash.remove(), 1500);
+            }
+        } catch (err) {
+            // Best-effort highlight — never fail the navigation.
+            console.warn('Scene note highlight failed:', err);
+        }
     }
 }

@@ -1676,12 +1676,215 @@ export class ToolView extends ItemView {
         return String(anchorDate.getFullYear());
     }
 
+    // --- Scene Notes panel ---
+
+    /** Controls whether the notes list is currently mounted. */
+    private sceneNotesContainer: HTMLElement | null = null;
+    private sceneNotesEditorNoteId: string | null = null;
+    private sceneNotesUnsubscribe: (() => void) | null = null;
+    private sceneNotesAutosaveTimer: number | null = null;
+
+    public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
+        if (!this.normalView) return;
+        this.isNavigatorMode = false;
+        this.normalView.empty();
+        this.renderSceneNotesView(this.normalView, openNoteId);
+
+        // Subscribe to updates while this view is mounted.
+        if (!this.sceneNotesUnsubscribe) {
+            this.sceneNotesUnsubscribe = this.plugin.sceneNotesManager.onNotesChange(() => {
+                if (!this.sceneNotesContainer) return;
+                this.renderSceneNotesList(this.sceneNotesContainer);
+            });
+        }
+    }
+
+    /** Public entry point for focusing a specific note (e.g. from a gutter click). */
+    public openSceneNoteEditor(noteId: string): void {
+        void this.enterSceneNotesMode(noteId);
+    }
+
+    private renderSceneNotesView(container: HTMLElement, openNoteId?: string): void {
+        const view = container.createDiv({ cls: 'book-smith-scene-notes-view' });
+
+        // Header with "back" — matches navigator header styling to stay consistent.
+        const header = view.createDiv({ cls: 'book-smith-navigator-header' });
+        const backButton = header.createEl('button', { cls: 'book-smith-navigator-back-btn' });
+        setIcon(backButton, 'arrow-left');
+        backButton.appendChild(createSpan({ text: ' Back to toolbox' }));
+        backButton.addEventListener('click', () => {
+            if (!this.normalView) return;
+            this.teardownSceneNotes();
+            this.normalView.empty();
+            this.createNormalView(this.normalView);
+        });
+
+        const titleRow = view.createDiv({ cls: 'book-smith-navigator-title-row' });
+        const titleIcon = titleRow.createSpan({ cls: 'book-smith-navigator-title-icon' });
+        setIcon(titleIcon, 'flag');
+        titleRow.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene notes' });
+
+        // List section.
+        const listWrapper = view.createDiv({ cls: 'book-smith-scene-notes-list-wrapper' });
+        this.sceneNotesContainer = listWrapper;
+        this.renderSceneNotesList(listWrapper);
+
+        // Editor section — only populated when a note is selected.
+        view.createDiv({ cls: 'book-smith-scene-notes-editor', attr: { 'data-empty': 'true' } });
+
+        if (openNoteId) {
+            this.selectSceneNote(openNoteId);
+        }
+    }
+
+    private renderSceneNotesList(container: HTMLElement): void {
+        container.empty();
+
+        const book = this.plugin.sceneNotesManager.getCurrentBook();
+        if (!book) {
+            container.createEl('p', {
+                cls: 'book-smith-navigator-empty',
+                text: 'Open a book to see its scene notes.'
+            });
+            return;
+        }
+
+        const allNotes = this.plugin.sceneNotesManager.getAllNotes();
+        if (allNotes.length === 0) {
+            container.createEl('p', {
+                cls: 'book-smith-navigator-empty',
+                text: 'No scene notes yet. Press Ctrl+J in a paragraph to add one.'
+            });
+            return;
+        }
+
+        // Group by chapter (file path relative to book folder).
+        const bookRoot = `${this.plugin.settings.defaultBookPath}/${book.basic.title}`;
+        const groups = new Map<string, typeof allNotes>();
+        for (const note of allNotes) {
+            const rel = note.filePath.startsWith(bookRoot + '/')
+                ? note.filePath.slice(bookRoot.length + 1)
+                : note.filePath;
+            const arr = groups.get(rel) || [];
+            arr.push(note);
+            groups.set(rel, arr);
+        }
+        const sortedGroupKeys = Array.from(groups.keys()).sort();
+
+        sortedGroupKeys.forEach(key => {
+            const section = container.createDiv({ cls: 'book-smith-scene-notes-group' });
+            section.createEl('h4', { cls: 'book-smith-scene-notes-group-title', text: key });
+
+            const notesInGroup = (groups.get(key) || []).slice().sort((a, b) => a.fromLine - b.fromLine);
+            notesInGroup.forEach(note => {
+                const row = section.createDiv({ cls: 'book-smith-scene-notes-row' });
+                if (note.id === this.sceneNotesEditorNoteId) row.addClass('is-active');
+
+                const flag = row.createSpan({ cls: 'book-smith-scene-notes-row-flag' });
+                setIcon(flag, 'flag');
+                if (note.color) flag.style.setProperty('--scene-note-color', note.color);
+
+                const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
+                const preview = (note.content || '').trim().split('\n')[0] || '(empty note)';
+                body.createDiv({
+                    cls: 'book-smith-scene-notes-row-preview',
+                    text: preview.length > 80 ? preview.slice(0, 80) + '…' : preview
+                });
+                body.createDiv({
+                    cls: 'book-smith-scene-notes-row-meta',
+                    text: `Line ${note.fromLine + 1}`
+                });
+
+                row.addEventListener('click', () => {
+                    this.selectSceneNote(note.id);
+                    void this.plugin.focusEditorOnNote(note);
+                });
+            });
+        });
+    }
+
+    private selectSceneNote(noteId: string): void {
+        this.sceneNotesEditorNoteId = noteId;
+        if (this.sceneNotesContainer) this.renderSceneNotesList(this.sceneNotesContainer);
+
+        const editor = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
+        if (!editor) return;
+        editor.empty();
+        editor.removeAttribute('data-empty');
+
+        const note = this.plugin.sceneNotesManager.getNoteById(noteId);
+        if (!note) {
+            editor.setAttribute('data-empty', 'true');
+            return;
+        }
+
+        const headerRow = editor.createDiv({ cls: 'book-smith-scene-notes-editor-header' });
+        headerRow.createEl('span', {
+            cls: 'book-smith-scene-notes-editor-title',
+            text: `Line ${note.fromLine + 1}${note.toLine !== note.fromLine ? `–${note.toLine + 1}` : ''}`
+        });
+
+        const deleteBtn = headerRow.createEl('button', {
+            cls: 'book-smith-scene-notes-delete-btn',
+            attr: { 'aria-label': 'Delete note' }
+        });
+        setIcon(deleteBtn, 'trash');
+        deleteBtn.addEventListener('click', async () => {
+            await this.plugin.sceneNotesManager.deleteNote(note.id);
+            this.sceneNotesEditorNoteId = null;
+            const ed = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
+            if (ed) { ed.empty(); ed.setAttribute('data-empty', 'true'); }
+            new Notice('Scene note deleted');
+        });
+
+        const textarea = editor.createEl('textarea', {
+            cls: 'book-smith-scene-notes-editor-textarea',
+            attr: { placeholder: 'Write your note…' }
+        }) as HTMLTextAreaElement;
+        textarea.value = note.content || '';
+
+        const scheduleSave = () => {
+            if (this.sceneNotesAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesAutosaveTimer);
+            }
+            this.sceneNotesAutosaveTimer = window.setTimeout(async () => {
+                this.sceneNotesAutosaveTimer = null;
+                await this.plugin.sceneNotesManager.updateNote(note.id, { content: textarea.value });
+            }, 400);
+        };
+        textarea.addEventListener('input', scheduleSave);
+        textarea.addEventListener('blur', async () => {
+            if (this.sceneNotesAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesAutosaveTimer);
+                this.sceneNotesAutosaveTimer = null;
+            }
+            await this.plugin.sceneNotesManager.updateNote(note.id, { content: textarea.value });
+        });
+
+        // Auto-focus the textarea when the editor opens so Ctrl+J flow is seamless.
+        window.setTimeout(() => textarea.focus(), 0);
+    }
+
+    private teardownSceneNotes(): void {
+        if (this.sceneNotesUnsubscribe) {
+            this.sceneNotesUnsubscribe();
+            this.sceneNotesUnsubscribe = null;
+        }
+        if (this.sceneNotesAutosaveTimer !== null) {
+            window.clearTimeout(this.sceneNotesAutosaveTimer);
+            this.sceneNotesAutosaveTimer = null;
+        }
+        this.sceneNotesContainer = null;
+        this.sceneNotesEditorNoteId = null;
+    }
+
     // Override onClose to ensure all views are properly closed
     async onClose() {
         if (this.statsChangeUnsubscribe) {
             this.statsChangeUnsubscribe();
             this.statsChangeUnsubscribe = null;
         }
+        this.teardownSceneNotes();
         if (this.focusView) {
             this.focusView.remove();
             this.focusView = null;

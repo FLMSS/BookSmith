@@ -25,6 +25,9 @@ export class ToolsViewToolbox {
         const statsItem = this.createToolItem(actions, 'calendar-days', i18n.t('STATS'));
         statsItem.addEventListener('click', () => void this.view.enterStatisticsMode());
 
+        const sceneNotesItem = this.createToolItem(actions, 'flag', 'Scene notes');
+        sceneNotesItem.addEventListener('click', () => void this.view.enterSceneNotesMode());
+
         const exportItem = this.createToolItem(actions, 'book', i18n.t('EXPORT'));
         exportItem.addEventListener('click', () => this.view.enterTypographyMode());
     }
