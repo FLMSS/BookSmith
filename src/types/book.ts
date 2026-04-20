@@ -94,6 +94,7 @@ export interface BookStats {
         positive_change: number;
         negative_change: number;
         net_change: number;
+        start_of_day_words?: number;   // Word count at the start of this day (set once, never updated)
         words_added?: number;
         words_deleted?: number;
         iteration_deletions?: number;

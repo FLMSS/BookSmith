@@ -209,11 +209,16 @@ export class BookStatsManager {
             const iterationDeletionsDelta = Math.max(0, wordsDeletedDelta - oldDeletionsDelta);
             const iterationDeletions = Math.max(0, (previous.iteration_deletions || 0) + iterationDeletionsDelta);
             const oldDeletions = Math.max(0, (previous.old_deletions || 0) + oldDeletionsDelta);
+            // start_of_day_words: set once on first entry creation, never updated.
+            // Derived as totalWordCount - netChange so it reflects the pre-day baseline.
+            // Preserved from previous entry on subsequent updates; fallback for legacy entries.
+            const startOfDayWords = previous.start_of_day_words ?? (totalWordCount - netChange);
 
             dailyProgress[today] = {
                 positive_change: positiveChange,
                 negative_change: negativeChange,
                 net_change: netChange,
+                start_of_day_words: startOfDayWords,
                 words_added: wordsAdded,
                 words_deleted: wordsDeleted,
                 iteration_deletions: iterationDeletions,
@@ -401,12 +406,12 @@ export class BookStatsManager {
         if (deletedWords <= 0) return { oldWords: 0, normalWords: 0 };
 
         // Budget: old_deletions can never exceed start_of_day_words.
-        // start_of_day_words = total_words - net_change
         const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
         const entry = this.currentBook?.stats?.daily_progress?.[today];
         const totalWords = this.currentBook?.stats?.total_words ?? 0;
         const netChange = entry?.net_change ?? 0;
-        const startOfDayWords = totalWords - netChange;
+        // Use persisted start_of_day_words when available; fall back to derivation for legacy entries.
+        const startOfDayWords = entry?.start_of_day_words ?? (totalWords - netChange);
         const oldDeletionsSoFar = (entry?.old_deletions ?? 0) + this.getCurrentProjectTracker().pendingOldDeletions;
         const remainingBudget = Math.max(0, startOfDayWords - oldDeletionsSoFar);
 
