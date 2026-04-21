@@ -140,21 +140,55 @@ export function buildSceneNotesGutter(
                 const oldToLine = Math.max(oldFromLine, Math.min(note.toLine, oldLineCount - 1));
                 let oldFromPos: number;
                 let oldToPos: number;
+                let oldText: string;
                 try {
                     oldFromPos = oldDoc.line(oldFromLine + 1).from;
                     oldToPos = oldDoc.line(oldToLine + 1).to;
+                    oldText = oldDoc.sliceString(oldFromPos, oldToPos);
                 } catch {
                     continue;
                 }
 
-                const mappedFromPos = u.changes.mapPos(oldFromPos, 1);
-                const mappedToPos = u.changes.mapPos(oldToPos, -1);
+                // Detect if the entire paragraph range was wiped by a single
+                // change — the signature of drag-drop or Alt+Up/Down line moves
+                // (delete here, insert there, same content).
+                let oldRangeFullyDeleted = false;
+                u.changes.iterChanges((fromA, toA) => {
+                    if (fromA <= oldFromPos && toA >= oldToPos) {
+                        oldRangeFullyDeleted = true;
+                    }
+                });
 
-                const clampedFromPos = Math.max(0, Math.min(mappedFromPos, newDoc.length));
-                const clampedToPos = Math.max(clampedFromPos, Math.min(mappedToPos, newDoc.length));
+                let newFromLine: number;
+                let newToLine: number;
 
-                const newFromLine = newDoc.lineAt(clampedFromPos).number - 1;
-                const newToLine = newDoc.lineAt(clampedToPos).number - 1;
+                if (oldRangeFullyDeleted && oldText.trim().length > 0) {
+                    // Paragraph may have moved. Search the new doc for the
+                    // exact text. Require a unique match — if the same text
+                    // appears multiple times we can't be sure which one is
+                    // ours, so we fall back to position mapping.
+                    const newText = newDoc.toString();
+                    const first = newText.indexOf(oldText);
+                    const second = first !== -1 ? newText.indexOf(oldText, first + 1) : -1;
+                    if (first !== -1 && second === -1) {
+                        newFromLine = newDoc.lineAt(first).number - 1;
+                        newToLine = newDoc.lineAt(first + oldText.length).number - 1;
+                    } else {
+                        // Not found (actually deleted) or ambiguous.
+                        const mappedFromPos = u.changes.mapPos(oldFromPos, 1);
+                        const clampedFromPos = Math.max(0, Math.min(mappedFromPos, newDoc.length));
+                        newFromLine = newDoc.lineAt(clampedFromPos).number - 1;
+                        newToLine = newFromLine;
+                    }
+                } else {
+                    // Normal edit — position mapping is sufficient.
+                    const mappedFromPos = u.changes.mapPos(oldFromPos, 1);
+                    const mappedToPos = u.changes.mapPos(oldToPos, -1);
+                    const clampedFromPos = Math.max(0, Math.min(mappedFromPos, newDoc.length));
+                    const clampedToPos = Math.max(clampedFromPos, Math.min(mappedToPos, newDoc.length));
+                    newFromLine = newDoc.lineAt(clampedFromPos).number - 1;
+                    newToLine = newDoc.lineAt(clampedToPos).number - 1;
+                }
 
                 if (newFromLine !== note.fromLine || newToLine !== note.toLine) {
                     pending.push({ id: note.id, fromLine: newFromLine, toLine: newToLine });

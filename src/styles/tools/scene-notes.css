@@ -93,11 +93,18 @@
     flex: 1 1 auto;
     min-width: 0;
 }
-.book-smith-scene-notes-row-preview {
+.book-smith-scene-notes-row-title {
     font-size: 0.9em;
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--text-normal);
+}
+.book-smith-scene-notes-row-title.is-placeholder {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-style: italic;
 }
 .book-smith-scene-notes-row-meta {
     font-size: 0.75em;
@@ -119,12 +126,50 @@
 }
 .book-smith-scene-notes-editor-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+}
+.book-smith-scene-notes-editor-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
 }
 .book-smith-scene-notes-editor-title {
     font-size: 0.8em;
     color: var(--text-muted);
+}
+.book-smith-scene-notes-editor-created {
+    font-size: 0.75em;
+    color: var(--text-faint);
+}
+/* Title input */
+.book-smith-scene-notes-title-input {
+    width: 100%;
+    padding: 5px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: 0.95em;
+    font-weight: 500;
+}
+.book-smith-scene-notes-title-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+.book-smith-scene-notes-title-input::placeholder {
+    color: var(--text-faint);
+    font-weight: 400;
+}
+/* "Note" label above textarea */
+.book-smith-scene-notes-note-label {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-top: 2px;
 }
 .book-smith-scene-notes-delete-btn {
     background: transparent;

@@ -1683,11 +1683,21 @@ export class ToolView extends ItemView {
     private sceneNotesEditorNoteId: string | null = null;
     private sceneNotesUnsubscribe: (() => void) | null = null;
     private sceneNotesAutosaveTimer: number | null = null;
+    private sceneNotesTitleAutosaveTimer: number | null = null;
     private sceneNotesFileOpenRef: any = null;
 
     public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
         if (!this.normalView) return;
         this.isNavigatorMode = false;
+        // Clear the stats-view marker so `isStatsViewVisible()` doesn't
+        // mistakenly return true — otherwise the 250ms stats-refresh timer
+        // (scheduled by revealLeaf → layout-change) would overwrite this view
+        // with the statistics panel a moment after it renders.
+        this.normalView.removeClass('book-smith-stats-view');
+        if (this.statsRefreshTimer !== null) {
+            window.clearTimeout(this.statsRefreshTimer);
+            this.statsRefreshTimer = null;
+        }
         this.normalView.empty();
         this.renderSceneNotesView(this.normalView, openNoteId);
 
@@ -1841,14 +1851,27 @@ export class ToolView extends ItemView {
                     if (note.color) flag.style.setProperty('--scene-note-color', note.color);
 
                     const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
-                    const preview = (note.content || '').trim().split('\n')[0] || '(empty note)';
-                    body.createDiv({
-                        cls: 'book-smith-scene-notes-row-preview',
-                        text: preview.length > 80 ? preview.slice(0, 80) + '…' : preview
-                    });
+
+                    // Title row: real title or greyed-out content fallback.
+                    const noteTitle = note.title?.trim();
+                    const hasTitle = !!noteTitle;
+                    const titleEl = body.createDiv({ cls: 'book-smith-scene-notes-row-title' });
+                    if (hasTitle) {
+                        titleEl.setText(noteTitle!);
+                    } else {
+                        const fallback = (note.content || '').trim().split('\n')[0] || '(empty note)';
+                        titleEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
+                        titleEl.addClass('is-placeholder');
+                    }
+
+                    // Meta: created date + anchor line.
+                    const createdDate = note.createdAt ? new Date(note.createdAt) : null;
+                    const dateStr = createdDate
+                        ? createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
                     body.createDiv({
                         cls: 'book-smith-scene-notes-row-meta',
-                        text: `Line ${note.fromLine + 1}`
+                        text: [dateStr, `Line ${note.fromLine + 1}`].filter(Boolean).join(' · ')
                     });
 
                     row.addEventListener('click', () => {
@@ -1877,10 +1900,22 @@ export class ToolView extends ItemView {
         const note = located.note;
 
         const headerRow = editor.createDiv({ cls: 'book-smith-scene-notes-editor-header' });
-        headerRow.createEl('span', {
+
+        // Left side: anchor line + created date.
+        const headerLeft = headerRow.createDiv({ cls: 'book-smith-scene-notes-editor-header-left' });
+        headerLeft.createEl('span', {
             cls: 'book-smith-scene-notes-editor-title',
             text: `Line ${note.fromLine + 1}${note.toLine !== note.fromLine ? `–${note.toLine + 1}` : ''}`
         });
+        if (note.createdAt) {
+            const createdFull = new Date(note.createdAt).toLocaleDateString(undefined, {
+                month: 'short', day: 'numeric', year: 'numeric'
+            });
+            headerLeft.createEl('span', {
+                cls: 'book-smith-scene-notes-editor-created',
+                text: `Created ${createdFull}`
+            });
+        }
 
         const deleteBtn = headerRow.createEl('button', {
             cls: 'book-smith-scene-notes-delete-btn',
@@ -1937,6 +1972,35 @@ export class ToolView extends ItemView {
             });
         });
 
+        // Title input — optional, autosaves.
+        const titleInput = editor.createEl('input', {
+            cls: 'book-smith-scene-notes-title-input',
+            attr: { type: 'text', placeholder: 'Title (optional)…' }
+        }) as HTMLInputElement;
+        titleInput.value = note.title || '';
+
+        const scheduleTitleSave = () => {
+            if (this.sceneNotesTitleAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+            }
+            this.sceneNotesTitleAutosaveTimer = window.setTimeout(async () => {
+                this.sceneNotesTitleAutosaveTimer = null;
+                const val = titleInput.value.trim();
+                await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
+            }, 400);
+        };
+        titleInput.addEventListener('input', scheduleTitleSave);
+        titleInput.addEventListener('blur', async () => {
+            if (this.sceneNotesTitleAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+                this.sceneNotesTitleAutosaveTimer = null;
+            }
+            const val = titleInput.value.trim();
+            await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
+        });
+
+        editor.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+
         const textarea = editor.createEl('textarea', {
             cls: 'book-smith-scene-notes-editor-textarea',
             attr: { placeholder: 'Write your note…' }
@@ -1977,6 +2041,10 @@ export class ToolView extends ItemView {
         if (this.sceneNotesAutosaveTimer !== null) {
             window.clearTimeout(this.sceneNotesAutosaveTimer);
             this.sceneNotesAutosaveTimer = null;
+        }
+        if (this.sceneNotesTitleAutosaveTimer !== null) {
+            window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+            this.sceneNotesTitleAutosaveTimer = null;
         }
         this.sceneNotesContainer = null;
         this.sceneNotesEditorNoteId = null;

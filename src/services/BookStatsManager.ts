@@ -7,12 +7,19 @@ import { getLogicalDayISODate } from '../utils/logicalDay';
 
 /** A single forward operation recorded for deterministic undo. */
 interface StatsOp {
-    type: 'add' | 'delete' | 'delete-old';
+    type: 'add' | 'delete' | 'delete-old' | 'compound';
     /** Total words in this operation. */
     words: number;
     /** For mixed old-deletion: how many words were classified as old vs normal. */
     oldWords?: number;
     normalWords?: number;
+    /**
+     * For `compound` ops (a single user transaction that both inserts and
+     * deletes — drag-drop, Alt+Up/Down line moves, find-and-replace, etc.).
+     * Stored separately from `words` so undo can reverse both counters.
+     */
+    addedWords?: number;
+    deletedWords?: number;
 }
 
 interface ProjectMoveTracker {
@@ -379,11 +386,32 @@ export class BookStatsManager {
                 tracker.pendingRemovedWords -= op.words;
                 tracker.pendingOldDeletions -= (op.oldWords ?? op.words);
                 break;
+            case 'compound':
+                tracker.pendingAddedWords -= (op.addedWords ?? 0);
+                tracker.pendingRemovedWords -= (op.deletedWords ?? 0);
+                break;
         }
     }
 
     private recordTrackedWordChanges(addedWords: number, deletedWords: number): void {
         const tracker = this.getCurrentProjectTracker();
+
+        // A single CM6 transaction can carry both an insert and a delete
+        // (drag-drop moves a paragraph, Alt+Up/Down relocates a line,
+        // find-and-replace swaps text). The user undoes them as ONE action,
+        // so we must record them as ONE op — otherwise Ctrl+Z pops only half
+        // of the pair and the other half permanently inflates the stats.
+        if (addedWords > 0 && deletedWords > 0) {
+            tracker.pendingAddedWords += addedWords;
+            tracker.pendingRemovedWords += deletedWords;
+            tracker.opStack.push({
+                type: 'compound',
+                words: addedWords + deletedWords,
+                addedWords,
+                deletedWords
+            });
+            return;
+        }
 
         if (addedWords > 0) {
             tracker.pendingAddedWords += addedWords;

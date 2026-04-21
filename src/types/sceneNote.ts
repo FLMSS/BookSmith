@@ -6,6 +6,7 @@ export interface SceneNote {
     filePath: string;           // Vault-relative path to the file this note is in
     fromLine: number;           // Start line of the paragraph (0-indexed)
     toLine: number;             // End line of the paragraph (0-indexed, inclusive)
+    title?: string;             // Optional short title for the note
     content: string;            // Note body (plain text)
     color?: string;             // Optional flag color (hex or named)
     createdAt: string;          // ISO creation timestamp
