@@ -55,6 +55,17 @@
     margin: 6px 0 4px;
     letter-spacing: 0.04em;
 }
+.book-smith-scene-notes-book-header {
+    margin: 10px 0 4px;
+    padding: 2px 0 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.book-smith-scene-notes-book-title {
+    font-size: 0.9em;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-normal);
+}
 .book-smith-scene-notes-row {
     display: flex;
     gap: 8px;
@@ -127,6 +138,54 @@
     color: var(--text-error);
     background-color: var(--background-modifier-hover);
 }
+/* Color swatch picker */
+.book-smith-scene-notes-color-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0 4px;
+}
+.book-smith-scene-notes-color-label {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+.book-smith-scene-notes-color-swatches {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.book-smith-scene-notes-color-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: transform 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
+    flex: 0 0 auto;
+}
+.book-smith-scene-notes-color-swatch:hover {
+    transform: scale(1.15);
+}
+.book-smith-scene-notes-color-swatch.is-active {
+    border-color: var(--text-normal);
+    box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 3px var(--interactive-accent);
+}
+.book-smith-scene-notes-color-swatch.is-none {
+    background: var(--background-primary);
+    position: relative;
+}
+.book-smith-scene-notes-color-swatch.is-none::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: var(--text-error);
+    transform: rotate(-45deg);
+    transform-origin: center;
+}
+
 .book-smith-scene-notes-editor-textarea {
     width: 100%;
     min-height: 120px;

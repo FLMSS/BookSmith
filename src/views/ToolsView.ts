@@ -1683,6 +1683,7 @@ export class ToolView extends ItemView {
     private sceneNotesEditorNoteId: string | null = null;
     private sceneNotesUnsubscribe: (() => void) | null = null;
     private sceneNotesAutosaveTimer: number | null = null;
+    private sceneNotesFileOpenRef: any = null;
 
     public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
         if (!this.normalView) return;
@@ -1696,6 +1697,14 @@ export class ToolView extends ItemView {
                 if (!this.sceneNotesContainer) return;
                 this.renderSceneNotesList(this.sceneNotesContainer);
             });
+        }
+        // Also refresh when the active file changes (to reorder by the now-current book).
+        if (!this.sceneNotesFileOpenRef) {
+            this.sceneNotesFileOpenRef = this.app.workspace.on('file-open', () => {
+                if (!this.sceneNotesContainer) return;
+                this.renderSceneNotesList(this.sceneNotesContainer);
+            });
+            this.registerEvent(this.sceneNotesFileOpenRef);
         }
     }
 
@@ -1740,17 +1749,28 @@ export class ToolView extends ItemView {
     private renderSceneNotesList(container: HTMLElement): void {
         container.empty();
 
-        const book = this.plugin.sceneNotesManager.getCurrentBook();
-        if (!book) {
-            container.createEl('p', {
-                cls: 'book-smith-navigator-empty',
-                text: 'Open a book to see its scene notes.'
-            });
-            return;
-        }
+        // Resolve the book for the currently active file, if any.
+        const activeFile = this.app.workspace.getActiveFile();
+        void (async () => {
+            if (activeFile?.extension === 'md') {
+                await this.plugin.sceneNotesManager.ensureLoadedForFile(activeFile.path);
+                if (this.sceneNotesContainer === container) {
+                    this.actuallyRenderSceneNotesList(container, activeFile.path);
+                }
+            } else {
+                this.actuallyRenderSceneNotesList(container, null);
+            }
+        })();
+    }
 
-        const allNotes = this.plugin.sceneNotesManager.getAllNotes();
-        if (allNotes.length === 0) {
+    private actuallyRenderSceneNotesList(container: HTMLElement, activeFilePath: string | null): void {
+        container.empty();
+
+        // Gather all notes across loaded books, grouped first by book title
+        // then by file path within that book.
+        const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
+
+        if (allEntries.length === 0) {
             container.createEl('p', {
                 cls: 'book-smith-navigator-empty',
                 text: 'No scene notes yet. Press Ctrl+J in a paragraph to add one.'
@@ -1758,46 +1778,83 @@ export class ToolView extends ItemView {
             return;
         }
 
-        // Group by chapter (file path relative to book folder).
-        const bookRoot = `${this.plugin.settings.defaultBookPath}/${book.basic.title}`;
-        const groups = new Map<string, typeof allNotes>();
-        for (const note of allNotes) {
-            const rel = note.filePath.startsWith(bookRoot + '/')
-                ? note.filePath.slice(bookRoot.length + 1)
-                : note.filePath;
-            const arr = groups.get(rel) || [];
-            arr.push(note);
-            groups.set(rel, arr);
+        // Figure out the "active book" UUID from the current file for prioritized display.
+        let activeBookId: string | null = null;
+        if (activeFilePath) {
+            const entry = allEntries.find(e =>
+                activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
+            );
+            activeBookId = entry?.owner.uuid || null;
         }
-        const sortedGroupKeys = Array.from(groups.keys()).sort();
 
-        sortedGroupKeys.forEach(key => {
-            const section = container.createDiv({ cls: 'book-smith-scene-notes-group' });
-            section.createEl('h4', { cls: 'book-smith-scene-notes-group-title', text: key });
+        // Group by book UUID.
+        const byBook = new Map<string, { owner: typeof allEntries[0]['owner']; notes: typeof allEntries[0]['note'][] }>();
+        for (const { owner, note } of allEntries) {
+            const bucket = byBook.get(owner.uuid) || { owner, notes: [] };
+            bucket.notes.push(note);
+            byBook.set(owner.uuid, bucket);
+        }
 
-            const notesInGroup = (groups.get(key) || []).slice().sort((a, b) => a.fromLine - b.fromLine);
-            notesInGroup.forEach(note => {
-                const row = section.createDiv({ cls: 'book-smith-scene-notes-row' });
-                if (note.id === this.sceneNotesEditorNoteId) row.addClass('is-active');
+        // Sort: active book first, then alphabetic by title.
+        const bookOrder = Array.from(byBook.keys()).sort((a, b) => {
+            if (a === activeBookId) return -1;
+            if (b === activeBookId) return 1;
+            return (byBook.get(a)!.owner.title).localeCompare(byBook.get(b)!.owner.title);
+        });
 
-                const flag = row.createSpan({ cls: 'book-smith-scene-notes-row-flag' });
-                setIcon(flag, 'flag');
-                if (note.color) flag.style.setProperty('--scene-note-color', note.color);
+        const multipleBooks = bookOrder.length > 1;
 
-                const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
-                const preview = (note.content || '').trim().split('\n')[0] || '(empty note)';
-                body.createDiv({
-                    cls: 'book-smith-scene-notes-row-preview',
-                    text: preview.length > 80 ? preview.slice(0, 80) + '…' : preview
+        bookOrder.forEach(uuid => {
+            const { owner, notes } = byBook.get(uuid)!;
+
+            if (multipleBooks) {
+                const bookHeader = container.createDiv({ cls: 'book-smith-scene-notes-book-header' });
+                bookHeader.createEl('h3', {
+                    cls: 'book-smith-scene-notes-book-title',
+                    text: owner.title + (uuid === activeBookId ? '  (current)' : '')
                 });
-                body.createDiv({
-                    cls: 'book-smith-scene-notes-row-meta',
-                    text: `Line ${note.fromLine + 1}`
-                });
+            }
 
-                row.addEventListener('click', () => {
-                    this.selectSceneNote(note.id);
-                    void this.plugin.focusEditorOnNote(note);
+            // Sub-group by relative file path within this book.
+            const groups = new Map<string, typeof notes>();
+            for (const note of notes) {
+                const rel = note.filePath.startsWith(owner.folderPath + '/')
+                    ? note.filePath.slice(owner.folderPath.length + 1)
+                    : note.filePath;
+                const arr = groups.get(rel) || [];
+                arr.push(note);
+                groups.set(rel, arr);
+            }
+            const sortedGroupKeys = Array.from(groups.keys()).sort();
+
+            sortedGroupKeys.forEach(key => {
+                const section = container.createDiv({ cls: 'book-smith-scene-notes-group' });
+                section.createEl('h4', { cls: 'book-smith-scene-notes-group-title', text: key });
+
+                const notesInGroup = (groups.get(key) || []).slice().sort((a, b) => a.fromLine - b.fromLine);
+                notesInGroup.forEach(note => {
+                    const row = section.createDiv({ cls: 'book-smith-scene-notes-row' });
+                    if (note.id === this.sceneNotesEditorNoteId) row.addClass('is-active');
+
+                    const flag = row.createSpan({ cls: 'book-smith-scene-notes-row-flag' });
+                    setIcon(flag, 'flag');
+                    if (note.color) flag.style.setProperty('--scene-note-color', note.color);
+
+                    const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
+                    const preview = (note.content || '').trim().split('\n')[0] || '(empty note)';
+                    body.createDiv({
+                        cls: 'book-smith-scene-notes-row-preview',
+                        text: preview.length > 80 ? preview.slice(0, 80) + '…' : preview
+                    });
+                    body.createDiv({
+                        cls: 'book-smith-scene-notes-row-meta',
+                        text: `Line ${note.fromLine + 1}`
+                    });
+
+                    row.addEventListener('click', () => {
+                        this.selectSceneNote(note.id);
+                        void this.plugin.focusEditorOnNote(note);
+                    });
                 });
             });
         });
@@ -1812,11 +1869,12 @@ export class ToolView extends ItemView {
         editor.empty();
         editor.removeAttribute('data-empty');
 
-        const note = this.plugin.sceneNotesManager.getNoteById(noteId);
-        if (!note) {
+        const located = this.plugin.sceneNotesManager.getNoteById(noteId);
+        if (!located) {
             editor.setAttribute('data-empty', 'true');
             return;
         }
+        const note = located.note;
 
         const headerRow = editor.createDiv({ cls: 'book-smith-scene-notes-editor-header' });
         headerRow.createEl('span', {
@@ -1835,6 +1893,48 @@ export class ToolView extends ItemView {
             const ed = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
             if (ed) { ed.empty(); ed.setAttribute('data-empty', 'true'); }
             new Notice('Scene note deleted');
+        });
+
+        // Color swatch row — Final Draft-style palette.
+        const SCENE_NOTE_COLORS: Array<{ name: string; value: string | null }> = [
+            { name: 'None', value: null },
+            { name: 'Red', value: '#d94a4a' },
+            { name: 'Orange', value: '#e88a3a' },
+            { name: 'Yellow', value: '#e8c93a' },
+            { name: 'Green', value: '#4aa84a' },
+            { name: 'Blue', value: '#4a8ae8' },
+            { name: 'Purple', value: '#8a4ad9' },
+            { name: 'Grey', value: '#8a8a8a' }
+        ];
+
+        const colorRow = editor.createDiv({ cls: 'book-smith-scene-notes-color-row' });
+        colorRow.createEl('span', {
+            cls: 'book-smith-scene-notes-color-label',
+            text: 'Color:'
+        });
+        const swatches = colorRow.createDiv({ cls: 'book-smith-scene-notes-color-swatches' });
+
+        SCENE_NOTE_COLORS.forEach(({ name, value }) => {
+            const swatch = swatches.createDiv({
+                cls: 'book-smith-scene-notes-color-swatch',
+                attr: { 'aria-label': name, title: name }
+            });
+            if (value === null) {
+                swatch.addClass('is-none');
+            } else {
+                swatch.style.backgroundColor = value;
+            }
+            const isActive = (note.color || null) === value;
+            if (isActive) swatch.addClass('is-active');
+
+            swatch.addEventListener('click', async () => {
+                await this.plugin.sceneNotesManager.updateNote(note.id, {
+                    color: value === null ? undefined : value
+                });
+                // Refresh swatch selection state without rebuilding the whole editor.
+                swatches.querySelectorAll('.is-active').forEach(el => el.removeClass('is-active'));
+                swatch.addClass('is-active');
+            });
         });
 
         const textarea = editor.createEl('textarea', {
@@ -1869,6 +1969,10 @@ export class ToolView extends ItemView {
         if (this.sceneNotesUnsubscribe) {
             this.sceneNotesUnsubscribe();
             this.sceneNotesUnsubscribe = null;
+        }
+        if (this.sceneNotesFileOpenRef) {
+            this.app.workspace.offref(this.sceneNotesFileOpenRef);
+            this.sceneNotesFileOpenRef = null;
         }
         if (this.sceneNotesAutosaveTimer !== null) {
             window.clearTimeout(this.sceneNotesAutosaveTimer);

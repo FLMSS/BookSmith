@@ -1,6 +1,6 @@
 import { editorInfoField } from 'obsidian';
 import { Extension, StateEffect } from '@codemirror/state';
-import { EditorView, gutter, GutterMarker } from '@codemirror/view';
+import { EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { SceneNotesManager } from './SceneNotesManager';
 import { SceneNote } from '../types/sceneNote';
 
@@ -28,7 +28,13 @@ export function buildSceneNotesGutter(
 
         override eq(other: GutterMarker): boolean {
             if (!(other instanceof SceneNoteMarker)) return false;
-            return other.note.id === this.note.id && other.isStart === this.isStart;
+            // Include color, fromLine, toLine so the gutter repaints when any
+            // visible-affecting property changes — not just the note id.
+            return other.note.id === this.note.id
+                && other.isStart === this.isStart
+                && (other.note.color || null) === (this.note.color || null)
+                && other.note.fromLine === this.note.fromLine
+                && other.note.toLine === this.note.toLine;
         }
 
         override toDOM(): HTMLElement {
@@ -72,6 +78,14 @@ export function buildSceneNotesGutter(
             if (!isStart) return null;
             return new SceneNoteMarker(note, true);
         },
+        // Without this, effect-only transactions (like our repaint effect fired
+        // from manager.notifyChange) don't cause the gutter to re-query
+        // lineMarker, so the flag stays stuck on its pre-edit line.
+        lineMarkerChange(update) {
+            return update.transactions.some(tr =>
+                tr.effects.some(e => e.is(sceneNotesRepaintEffect))
+            );
+        },
         initialSpacer: () => new SceneNoteMarker(
             {
                 id: '__spacer__',
@@ -97,7 +111,64 @@ export function buildSceneNotesGutter(
         }
     });
 
-    return [sceneNotesGutter];
+    /**
+     * Live anchor tracker — on every document change, maps each note's
+     * [fromLine, toLine] range through the transaction's changes so flags
+     * follow the text they were attached to.
+     *
+     * Uses `mapPos(pos, 1)` for `from` (push through an insert at the start)
+     * and `mapPos(pos, -1)` for `to` (don't absorb inserts at the end). Writes
+     * go through `updateNoteLines`, which only persists on a 500ms debounce.
+     * The actual mutation is deferred with `queueMicrotask` so we never call
+     * `dispatch` while a CM6 update is still in progress.
+     */
+    const lineTrackerPlugin = ViewPlugin.fromClass(class {
+        update(u: ViewUpdate) {
+            if (!u.docChanged) return;
+            const path = currentFilePath(u.view);
+            if (!path) return;
+            const notes = manager.getNotesForFile(path);
+            if (notes.length === 0) return;
+
+            const oldDoc = u.startState.doc;
+            const newDoc = u.state.doc;
+            const pending: Array<{ id: string; fromLine: number; toLine: number }> = [];
+
+            for (const note of notes) {
+                const oldLineCount = oldDoc.lines;
+                const oldFromLine = Math.max(0, Math.min(note.fromLine, oldLineCount - 1));
+                const oldToLine = Math.max(oldFromLine, Math.min(note.toLine, oldLineCount - 1));
+                let oldFromPos: number;
+                let oldToPos: number;
+                try {
+                    oldFromPos = oldDoc.line(oldFromLine + 1).from;
+                    oldToPos = oldDoc.line(oldToLine + 1).to;
+                } catch {
+                    continue;
+                }
+
+                const mappedFromPos = u.changes.mapPos(oldFromPos, 1);
+                const mappedToPos = u.changes.mapPos(oldToPos, -1);
+
+                const clampedFromPos = Math.max(0, Math.min(mappedFromPos, newDoc.length));
+                const clampedToPos = Math.max(clampedFromPos, Math.min(mappedToPos, newDoc.length));
+
+                const newFromLine = newDoc.lineAt(clampedFromPos).number - 1;
+                const newToLine = newDoc.lineAt(clampedToPos).number - 1;
+
+                if (newFromLine !== note.fromLine || newToLine !== note.toLine) {
+                    pending.push({ id: note.id, fromLine: newFromLine, toLine: newToLine });
+                }
+            }
+
+            // Apply synchronously so the gutter paint later in THIS update
+            // cycle sees the new line numbers. `updateNoteLines` defers its
+            // own notifyChange via microtask, so no dispatch happens mid-update.
+            for (const p of pending) manager.updateNoteLines(p.id, p.fromLine, p.toLine);
+        }
+    });
+
+    return [sceneNotesGutter, lineTrackerPlugin];
 }
 
 /**

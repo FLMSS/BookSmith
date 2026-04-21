@@ -31,7 +31,6 @@ export default class BookSmithPlugin extends Plugin {
     focusManager: FocusManager;
     focusHeaderIndicator: FocusHeaderIndicator;
     sceneNotesManager: SceneNotesManager;
-    private lastSceneNotesBookId: string | null = null;
 
     async onload() {
         await this.loadSettings();        
@@ -89,32 +88,38 @@ export default class BookSmithPlugin extends Plugin {
             })
         );
 
-        // Keep the Scene Notes manager's current book in sync with the active book.
-        this.registerEvent(this.app.workspace.on('layout-change', () => {
-            void this.syncSceneNotesActiveBook();
-        }));
-        this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-            void this.syncSceneNotesActiveBook();
-        }));
-        void this.syncSceneNotesActiveBook();
-
-        // Repaint gutters when notes change, and prune stale notes on file modify.
+        // Repaint gutters when notes change.
         this.register(this.sceneNotesManager.onNotesChange(() => {
             requestGutterRepaint(this.app);
         }));
+
+        // When any book file opens, eagerly load its book's notes so the gutter
+        // and Ctrl+J work instantly without requiring the book to be "active".
+        this.registerEvent(this.app.workspace.on('file-open', async (file) => {
+            if (!(file instanceof TFile) || file.extension !== 'md') return;
+            await this.sceneNotesManager.ensureLoadedForFile(file.path);
+            requestGutterRepaint(this.app);
+        }));
+        // Also resolve for any file already open at plugin-load time.
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile?.extension === 'md') {
+            void this.sceneNotesManager.ensureLoadedForFile(activeFile.path)
+                .then(() => requestGutterRepaint(this.app));
+        }
+
+        // Debounced auto-prune: remove notes whose anchor paragraph was deleted.
         const pruneTimers = new Map<string, number>();
         this.registerEvent(this.app.vault.on('modify', (file) => {
             if (!(file instanceof TFile) || file.extension !== 'md') return;
-            const book = this.sceneNotesManager.getCurrentBook();
-            if (!book) return;
-            const bookPath = `${this.settings.defaultBookPath}/${book.basic.title}`;
-            if (!file.path.startsWith(bookPath + '/')) return;
-            // Debounce per-file: only prune once typing pauses for ~800ms.
+            const bookRoot = this.settings.defaultBookPath;
+            if (!bookRoot || !file.path.startsWith(bookRoot + '/')) return;
             const prev = pruneTimers.get(file.path);
             if (prev) window.clearTimeout(prev);
             const timer = window.setTimeout(async () => {
                 pruneTimers.delete(file.path);
                 try {
+                    // Ensure the file's book is known before pruning.
+                    await this.sceneNotesManager.ensureLoadedForFile(file.path);
                     const content = await this.app.vault.cachedRead(file);
                     const lastLine = Math.max(0, content.split('\n').length - 1);
                     await this.sceneNotesManager.pruneNotesPastEnd(file.path, lastLine);
@@ -376,29 +381,17 @@ export default class BookSmithPlugin extends Plugin {
 
     // --- Scene Notes integration ---
 
-    private async syncSceneNotesActiveBook(): Promise<void> {
-        const bookId = this.settings.lastBookId || null;
-        if (bookId === this.lastSceneNotesBookId) return;
-        this.lastSceneNotesBookId = bookId;
-        const book = bookId ? await this.bookManager.getBookById(bookId) : null;
-        await this.sceneNotesManager.setCurrentBook(book);
-        requestGutterRepaint(this.app);
-    }
-
     private async addSceneNoteAtCursor(editor: Editor, view: MarkdownView): Promise<void> {
         const file = view.file;
         if (!file) {
             new Notice('No file is open');
             return;
         }
-        const book = this.sceneNotesManager.getCurrentBook();
-        if (!book) {
-            new Notice('Open a book first to add scene notes');
-            return;
-        }
-        const bookPath = `${this.settings.defaultBookPath}/${book.basic.title}`;
-        if (!file.path.startsWith(bookPath + '/')) {
-            new Notice('Scene notes only work inside the active book');
+
+        // Auto-detect which book this file belongs to by walking up the path.
+        const owner = await this.sceneNotesManager.ensureLoadedForFile(file.path);
+        if (!owner) {
+            new Notice('Scene notes only work inside a Book Smith book folder');
             return;
         }
 
@@ -414,14 +407,18 @@ export default class BookSmithPlugin extends Plugin {
             return;
         }
 
-        const note = await this.sceneNotesManager.createNote({
+        const created = await this.sceneNotesManager.createNote({
             filePath: file.path,
             fromLine,
             toLine,
             content: ''
         });
-        new Notice('Scene note added');
-        this.openSceneNoteInPanel(note.id);
+        if (!created) {
+            new Notice('Failed to create scene note');
+            return;
+        }
+        new Notice(`Scene note added to "${created.owner.title}"`);
+        this.openSceneNoteInPanel(created.note.id);
     }
 
     /**
@@ -440,12 +437,18 @@ export default class BookSmithPlugin extends Plugin {
                 window.setTimeout(() => {
                     const afterLeaves = this.app.workspace.getLeavesOfType('book-smith-tool');
                     const leaf = afterLeaves[0];
-                    if (leaf?.view instanceof ToolView) showNote(leaf.view);
+                    if (!leaf) return;
+                    // Pull the panel forward even if the sidebar is collapsed or
+                    // another tab is active.
+                    this.app.workspace.revealLeaf(leaf);
+                    if (leaf.view instanceof ToolView) showNote(leaf.view);
                 }, 50);
             })();
             return;
         }
         const leaf = leaves[0];
+        // Surface the panel: switches sidebar tabs and expands if collapsed.
+        this.app.workspace.revealLeaf(leaf);
         if (leaf.view instanceof ToolView) showNote(leaf.view);
     }
 
