@@ -1,22 +1,22 @@
 /* Scene Notes — gutter marker (in editor) */
 .book-smith-scene-notes-gutter {
-    min-width: 14px;
+    min-width: 22px;
 }
 .book-smith-scene-note-marker {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    width: 22px;
     height: 100%;
-    font-size: 0.9em;
+    font-size: 1.2em;
     color: var(--scene-note-color, var(--text-accent));
     cursor: pointer;
-    opacity: 0.85;
+    opacity: 0.9;
     transition: opacity 120ms ease, transform 120ms ease;
 }
 .book-smith-scene-note-marker:hover {
     opacity: 1;
-    transform: scale(1.1);
+    transform: scale(1.15);
 }
 
 /* Flash highlight when jumping to a note */

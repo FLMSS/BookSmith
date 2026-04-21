@@ -1741,7 +1741,7 @@ export class ToolView extends ItemView {
         const titleRow = view.createDiv({ cls: 'book-smith-navigator-title-row' });
         const titleIcon = titleRow.createSpan({ cls: 'book-smith-navigator-title-icon' });
         setIcon(titleIcon, 'flag');
-        titleRow.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene notes' });
+        titleRow.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene Notes' });
 
         // List section.
         const listWrapper = view.createDiv({ cls: 'book-smith-scene-notes-list-wrapper' });

@@ -19,6 +19,7 @@ import { EditorView } from '@codemirror/view';
 import { SceneNotesManager } from './services/SceneNotesManager';
 import { buildSceneNotesGutter, requestGutterRepaint } from './services/SceneNotesGutter';
 import { SceneNote } from './types/sceneNote';
+import { fountainCommentExtension } from './extensions/FountainComments';
 
 export default class BookSmithPlugin extends Plugin {
     settings: BookSmithSettings;
@@ -80,6 +81,9 @@ export default class BookSmithPlugin extends Plugin {
         this.focusManager = new FocusManager(this);
         this.focusHeaderIndicator = new FocusHeaderIndicator(this);
         this.focusHeaderIndicator.initialize();
+
+        // Fountain /* ... */ block-comment highlighting.
+        this.registerEditorExtension(fountainCommentExtension);
 
         // Register the Scene Notes gutter extension (per-editor).
         this.registerEditorExtension(

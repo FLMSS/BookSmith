@@ -1,0 +1,5 @@
+/* Fountain block comments — styled to match Obsidian's %% comment tone */
+.cm-fountain-comment {
+    color: var(--text-faint) !important;
+    opacity: 0.75;
+}
