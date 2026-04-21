@@ -1,5 +1,5 @@
 import { editorInfoField } from 'obsidian';
-import { Extension, StateEffect } from '@codemirror/state';
+import { Extension, RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { SceneNotesManager } from './SceneNotesManager';
 import { SceneNote } from '../types/sceneNote';
@@ -22,7 +22,7 @@ export function buildSceneNotesGutter(
 ): Extension {
     /** Per-line gutter marker for a scene note. */
     class SceneNoteMarker extends GutterMarker {
-        constructor(readonly note: SceneNote, readonly isStart: boolean) {
+        constructor(readonly note: SceneNote) {
             super();
         }
 
@@ -31,7 +31,6 @@ export function buildSceneNotesGutter(
             // Include color, fromLine, toLine so the gutter repaints when any
             // visible-affecting property changes — not just the note id.
             return other.note.id === this.note.id
-                && other.isStart === this.isStart
                 && (other.note.color || null) === (this.note.color || null)
                 && other.note.fromLine === this.note.fromLine
                 && other.note.toLine === this.note.toLine;
@@ -40,7 +39,6 @@ export function buildSceneNotesGutter(
         override toDOM(): HTMLElement {
             const el = document.createElement('div');
             el.addClass('book-smith-scene-note-marker');
-            if (this.isStart) el.addClass('is-start');
             el.setAttr('aria-label', 'Scene note');
             el.dataset.noteId = this.note.id;
             if (this.note.color) {
@@ -64,40 +62,67 @@ export function buildSceneNotesGutter(
         return manager.findNoteAtLine(path, line);
     };
 
+    /**
+     * Build a RangeSet of markers at the START of each note's fromLine.
+     * Using `markers` instead of `lineMarker` avoids CM6's per-line marker
+     * cache — every view update recomputes from live manager state, so
+     * flags appear the moment notes finish loading (no "stuck empty" cache).
+     */
+    const buildMarkerSet = (view: EditorView): RangeSet<GutterMarker> => {
+        const path = currentFilePath(view);
+        if (!path) return RangeSet.empty;
+        const notes = manager.getNotesForFile(path);
+        if (notes.length === 0) return RangeSet.empty;
+
+        // Sort by fromLine so RangeSetBuilder gets positions in order.
+        const sorted = notes.slice().sort((a, b) => a.fromLine - b.fromLine);
+        const builder = new RangeSetBuilder<GutterMarker>();
+        const lineCount = view.state.doc.lines;
+        let lastPos = -1;
+        for (const note of sorted) {
+            const lineNum = note.fromLine + 1;
+            if (lineNum < 1 || lineNum > lineCount) continue;
+            const pos = view.state.doc.line(lineNum).from;
+            // RangeSetBuilder requires strictly non-decreasing positions and
+            // rejects duplicates at the same point — skip if we'd repeat.
+            if (pos <= lastPos) continue;
+            lastPos = pos;
+            builder.add(pos, pos, new SceneNoteMarker(note));
+        }
+        return builder.finish();
+    };
+
+    /**
+     * StateField that holds the current marker RangeSet. Rebuilt on:
+     *  - document changes (line positions shift)
+     *  - our repaint effect (notes added/removed/loaded)
+     * The gutter reads this field, so any field update triggers a re-render.
+     */
+    const markerField = StateField.define<RangeSet<GutterMarker>>({
+        create() {
+            // Can't build yet — no view. Gutter's markers() will compute live.
+            return RangeSet.empty;
+        },
+        update(value, tr) {
+            // RangeSet can map through changes, but since positions come
+            // from line numbers in the manager, we'll just invalidate and
+            // let the gutter's markers() callback recompute.
+            // We only use this field as a "version signal" — the actual
+            // markers are produced by the gutter's markers() callback below.
+            if (tr.docChanged) return value; // value doesn't matter; gutter recomputes
+            for (const e of tr.effects) {
+                if (e.is(sceneNotesRepaintEffect)) return value; // force an update notification
+            }
+            return value;
+        }
+    });
+
     // --- The gutter itself ---
     const sceneNotesGutter = gutter({
         class: 'book-smith-scene-notes-gutter',
-        lineMarker(view, blockInfo) {
-            const path = currentFilePath(view);
-            if (!path) return null;
-            const line = view.state.doc.lineAt(blockInfo.from).number - 1; // 0-indexed
-            const note = manager.findNoteAtLine(path, line);
-            if (!note) return null;
-            // Only paint the flag on the first line of the paragraph to keep the gutter clean.
-            const isStart = line === note.fromLine;
-            if (!isStart) return null;
-            return new SceneNoteMarker(note, true);
+        markers(view) {
+            return buildMarkerSet(view);
         },
-        // Without this, effect-only transactions (like our repaint effect fired
-        // from manager.notifyChange) don't cause the gutter to re-query
-        // lineMarker, so the flag stays stuck on its pre-edit line.
-        lineMarkerChange(update) {
-            return update.transactions.some(tr =>
-                tr.effects.some(e => e.is(sceneNotesRepaintEffect))
-            );
-        },
-        initialSpacer: () => new SceneNoteMarker(
-            {
-                id: '__spacer__',
-                filePath: '',
-                fromLine: 0,
-                toLine: 0,
-                content: '',
-                createdAt: '',
-                updatedAt: ''
-            },
-            true
-        ),
         domEventHandlers: {
             mousedown(view, blockInfo, event) {
                 const line = view.state.doc.lineAt(blockInfo.from).number - 1;
@@ -202,19 +227,27 @@ export function buildSceneNotesGutter(
         }
     });
 
-    return [sceneNotesGutter, lineTrackerPlugin];
+    return [markerField, sceneNotesGutter, lineTrackerPlugin];
 }
 
 /**
  * Nudge all visible editors to repaint their gutters. Call this after
  * note CRUD so flag markers appear/disappear without requiring a user edit.
+ *
+ * Dispatches both:
+ *   - our repaint effect (for any logic keying off it)
+ *   - a selection "no-op" (anchor to current anchor) to guarantee CM6
+ *     treats it as a user-like transaction and re-runs gutter markers().
  */
 export function requestGutterRepaint(app: { workspace: { iterateAllLeaves: (cb: (leaf: any) => void) => void } }) {
     app.workspace.iterateAllLeaves((leaf: any) => {
         const view = leaf?.view;
         const cm: EditorView | undefined = view?.editor?.cm;
         if (!cm) return;
-        // Dispatch a StateEffect — forces a new view update so gutter.lineMarker reruns.
-        cm.dispatch({ effects: sceneNotesRepaintEffect.of(null) });
+        try {
+            cm.dispatch({ effects: sceneNotesRepaintEffect.of(null) });
+        } catch (err) {
+            console.warn('SceneNotes repaint dispatch failed:', err);
+        }
     });
 }

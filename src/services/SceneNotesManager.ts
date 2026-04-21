@@ -360,12 +360,38 @@ export class SceneNotesManager {
     /**
      * Given a file's full text and a cursor line, expand up and down until a
      * blank line (or the document boundary) is hit. Returns inclusive line range.
+     *
+     * Treats the YAML frontmatter block (`---` ... `---` at the top of the doc)
+     * as a hard boundary — the walk will not cross into or through it, because
+     * Obsidian's Live Preview hides frontmatter lines and a flag anchored
+     * there would be invisible.
      */
     static detectParagraphRange(docText: string, cursorLine: number): { fromLine: number; toLine: number } {
         const lines = docText.split('\n');
         const isBlank = (idx: number) => idx < 0 || idx >= lines.length || lines[idx].trim() === '';
 
+        // Detect frontmatter end: if the first line is `---`, find the matching
+        // closing `---`. `frontmatterEnd` is the first line index AFTER the block.
+        let frontmatterEnd = 0;
+        if (lines.length > 0 && lines[0] === '---') {
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i] === '---') {
+                    frontmatterEnd = i + 1;
+                    break;
+                }
+            }
+        }
+
         let line = Math.max(0, Math.min(cursorLine, lines.length - 1));
+
+        // If the cursor is inside the frontmatter block, snap down to the first
+        // non-blank line after it.
+        if (line < frontmatterEnd) {
+            let probe = frontmatterEnd;
+            while (probe < lines.length && isBlank(probe)) probe++;
+            if (probe >= lines.length) return { fromLine: frontmatterEnd, toLine: frontmatterEnd };
+            line = probe;
+        }
 
         // If the cursor is on a blank line, snap to the nearest non-blank paragraph.
         if (isBlank(line)) {
@@ -375,14 +401,14 @@ export class SceneNotesManager {
                 line = probe;
             } else {
                 probe = line - 1;
-                while (probe >= 0 && isBlank(probe)) probe--;
-                if (probe >= 0) line = probe;
+                while (probe >= frontmatterEnd && isBlank(probe)) probe--;
+                if (probe >= frontmatterEnd) line = probe;
                 else return { fromLine: line, toLine: line };
             }
         }
 
         let fromLine = line;
-        while (fromLine - 1 >= 0 && !isBlank(fromLine - 1)) fromLine--;
+        while (fromLine - 1 >= frontmatterEnd && !isBlank(fromLine - 1)) fromLine--;
         let toLine = line;
         while (toLine + 1 < lines.length && !isBlank(toLine + 1)) toLine++;
         return { fromLine, toLine };

@@ -3,11 +3,12 @@
     min-width: 22px;
 }
 .book-smith-scene-note-marker {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 22px;
-    height: 100%;
+    min-height: 20px;
+    line-height: 1;
     font-size: 1.2em;
     color: var(--scene-note-color, var(--text-accent));
     cursor: pointer;
@@ -33,6 +34,49 @@
 @keyframes book-smith-scene-note-flash {
     0% { opacity: 0.35; }
     100% { opacity: 0; }
+}
+
+/* Title row layout: left group + compact button on the right */
+.book-smith-scene-notes-title-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.book-smith-scene-notes-compact-btn {
+    flex: 0 0 auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 3px 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+}
+.book-smith-scene-notes-compact-btn:hover,
+.book-smith-scene-notes-compact-btn.is-active {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
+/* Compact mode — tighter rows, no meta line, no file group titles */
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-group-title {
+    display: none;
+}
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-row {
+    padding: 3px 6px;
+    gap: 5px;
+}
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-row-title {
+    font-size: 0.85em;
+}
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-row-meta {
+    display: none;
+}
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-row-flag {
+    padding-top: 0;
 }
 
 /* Scene Notes view in the right pane */
