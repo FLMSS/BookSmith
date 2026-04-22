@@ -5,7 +5,9 @@ import { FocusToolView } from '../components/FocusToolView';
 import BookSmithPlugin from '../main';
 import { i18n } from '../i18n/i18n';
 import { BookSelectionModal } from '../modals/BookSelectionModal';
-import { Book } from '../types/book';
+import { Book, ChapterNode } from '../types/book';
+import { BookOwner } from '../services/SceneNotesManager';
+import { SceneNote } from '../types/sceneNote';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { ToolsViewStats } from './ToolsViewStats';
@@ -1680,11 +1682,31 @@ export class ToolView extends ItemView {
 
     /** Controls whether the notes list is currently mounted. */
     private sceneNotesContainer: HTMLElement | null = null;
+    private sceneNotesViewEl: HTMLElement | null = null;
     private sceneNotesEditorNoteId: string | null = null;
     private sceneNotesUnsubscribe: (() => void) | null = null;
     private sceneNotesAutosaveTimer: number | null = null;
     private sceneNotesTitleAutosaveTimer: number | null = null;
     private sceneNotesFileOpenRef: any = null;
+    private sceneNotesCompact = false;
+    /**
+     * Cache of each book's canonical file order (read from book-config.json).
+     * Keyed by book folder path. Keeps list re-renders synchronous after the
+     * first load — critical for eliminating the empty-gap flash that causes
+     * the editor panel to shift up/down between list rebuilds.
+     */
+    private bookFileOrderCache = new Map<string, string[]>();
+    /** Set once the vault-modify listener is installed for cache invalidation. */
+    private bookFileOrderCacheRegistered = false;
+    /**
+     * Timestamp-based dblclick tracking for scene-note rows. We can't rely on
+     * the browser's native dblclick event because row DOM is replaced when
+     * notifyChange fires between the two clicks, which invalidates the
+     * browser's same-target check. Tracking by note id + timestamp works
+     * regardless of DOM replacement.
+     */
+    private sceneNotesLastClickTime = 0;
+    private sceneNotesLastClickId = '';
 
     public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
         if (!this.normalView) return;
@@ -1725,6 +1747,8 @@ export class ToolView extends ItemView {
 
     private renderSceneNotesView(container: HTMLElement, openNoteId?: string): void {
         const view = container.createDiv({ cls: 'book-smith-scene-notes-view' });
+        this.sceneNotesViewEl = view;
+        if (this.sceneNotesCompact) view.addClass('is-compact');
 
         // Header with "back" — matches navigator header styling to stay consistent.
         const header = view.createDiv({ cls: 'book-smith-navigator-header' });
@@ -1739,13 +1763,34 @@ export class ToolView extends ItemView {
         });
 
         const titleRow = view.createDiv({ cls: 'book-smith-navigator-title-row' });
-        const titleIcon = titleRow.createSpan({ cls: 'book-smith-navigator-title-icon' });
+        const titleLeft = titleRow.createDiv({ cls: 'book-smith-scene-notes-title-left' });
+        const titleIcon = titleLeft.createSpan({ cls: 'book-smith-navigator-title-icon' });
         setIcon(titleIcon, 'flag');
-        titleRow.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene Notes' });
+        titleLeft.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene Notes' });
+
+        // Compact toggle — top-right of title row.
+        const compactBtn = titleRow.createEl('button', {
+            cls: 'book-smith-scene-notes-compact-btn',
+            attr: { 'aria-label': 'Toggle compact view', title: 'Toggle compact view' }
+        });
+        setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+        if (this.sceneNotesCompact) compactBtn.addClass('is-active');
+        compactBtn.addEventListener('click', () => {
+            this.sceneNotesCompact = !this.sceneNotesCompact;
+            view.toggleClass('is-compact', this.sceneNotesCompact);
+            setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+            compactBtn.toggleClass('is-active', this.sceneNotesCompact);
+        });
 
         // List section.
         const listWrapper = view.createDiv({ cls: 'book-smith-scene-notes-list-wrapper' });
         this.sceneNotesContainer = listWrapper;
+        // Attach a single click delegate on the container — survives row
+        // rebuilds. Per-row listeners would be lost every time notifyChange
+        // fires (color save, title autosave, line-tracker update) because
+        // rows get replaced, which also kills the browser's native dblclick
+        // detection. Timestamp-based detection below is immune to that.
+        this.attachSceneNotesClickDelegate(listWrapper);
         this.renderSceneNotesList(listWrapper);
 
         // Editor section — only populated when a note is selected.
@@ -1756,74 +1801,135 @@ export class ToolView extends ItemView {
         }
     }
 
+    /**
+     * Resolve notes + book file order asynchronously, THEN do a single sync
+     * empty+fill of the list container. The atomic DOM swap prevents the list
+     * from flashing empty, which in turn prevents the editor panel below from
+     * shifting up/down between rebuilds — the "color panel flash" the user
+     * reported.
+     */
     private renderSceneNotesList(container: HTMLElement): void {
-        container.empty();
-
-        // Resolve the book for the currently active file, if any.
         const activeFile = this.app.workspace.getActiveFile();
         void (async () => {
             if (activeFile?.extension === 'md') {
                 await this.plugin.sceneNotesManager.ensureLoadedForFile(activeFile.path);
-                if (this.sceneNotesContainer === container) {
-                    this.actuallyRenderSceneNotesList(container, activeFile.path);
-                }
-            } else {
-                this.actuallyRenderSceneNotesList(container, null);
             }
+            if (this.sceneNotesContainer !== container) return;
+
+            const activeFilePath = activeFile?.extension === 'md' ? activeFile.path : null;
+            const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
+
+            // Resolve the book that owns the active file.
+            let activeBookId: string | null = null;
+            if (activeFilePath) {
+                const entry = allEntries.find(e =>
+                    activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
+                );
+                activeBookId = entry?.owner.uuid || null;
+            }
+
+            const projectEntries = activeBookId
+                ? allEntries.filter(e => e.owner.uuid === activeBookId)
+                : [];
+
+            // Pre-load ordered-file list before touching the DOM.
+            let orderedFiles: string[] = [];
+            if (projectEntries.length > 0) {
+                orderedFiles = await this.getBookFileOrderCached(projectEntries[0].owner.folderPath);
+            }
+            if (this.sceneNotesContainer !== container) return;
+
+            // Now do a sync rebuild — atomic empty+fill, no visible gap.
+            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId);
         })();
     }
 
-    private actuallyRenderSceneNotesList(container: HTMLElement, activeFilePath: string | null): void {
+    /**
+     * Read the book's chapter tree and return a flat ordered list of relative
+     * file paths (e.g. ["Title Page.md", "Epigraph.md", "ACT I/Scene 1.md"]).
+     * Groups (folders) are traversed depth-first in their declared order.
+     * Falls back to an empty array if the config cannot be read.
+     */
+    private async getBookFileOrder(bookFolderPath: string): Promise<string[]> {
+        try {
+            const configPath = `${bookFolderPath}/book-config.json`;
+            const configFile = this.app.vault.getAbstractFileByPath(configPath);
+            if (!(configFile instanceof TFile)) return [];
+            const raw = await this.app.vault.read(configFile);
+            const book = JSON.parse(raw) as Book;
+            const result: string[] = [];
+            const flatten = (nodes: ChapterNode[], prefix = '') => {
+                const sorted = [...nodes].sort((a, b) => a.order - b.order);
+                for (const node of sorted) {
+                    if (node.type === 'file') {
+                        // path in book-config is relative to the book folder
+                        result.push(prefix ? `${prefix}/${node.path}` : node.path);
+                    } else if (node.children?.length) {
+                        flatten(node.children, prefix ? `${prefix}/${node.path}` : node.path);
+                    }
+                }
+            };
+            if (book.structure?.tree) flatten(book.structure.tree);
+            return result;
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Cached wrapper around getBookFileOrder. First call per book reads and
+     * caches; subsequent calls return the cached order synchronously (they
+     * still await at the call site but resolve immediately). Also lazy-installs
+     * a vault 'modify' listener that invalidates the cache when any
+     * book-config.json changes — so reordering the tree via drag-and-drop is
+     * reflected on the next render.
+     */
+    private async getBookFileOrderCached(bookFolderPath: string): Promise<string[]> {
+        const cached = this.bookFileOrderCache.get(bookFolderPath);
+        if (cached) return cached;
+        const fresh = await this.getBookFileOrder(bookFolderPath);
+        this.bookFileOrderCache.set(bookFolderPath, fresh);
+        if (!this.bookFileOrderCacheRegistered) {
+            this.bookFileOrderCacheRegistered = true;
+            this.registerEvent(this.app.vault.on('modify', (file) => {
+                if (file instanceof TFile && file.name === 'book-config.json') {
+                    this.bookFileOrderCache.clear();
+                    if (this.sceneNotesContainer) {
+                        this.renderSceneNotesList(this.sceneNotesContainer);
+                    }
+                }
+            }));
+        }
+        return fresh;
+    }
+
+    /**
+     * Sync render of the notes list given pre-resolved data. Called by
+     * renderSceneNotesList after all async deps are satisfied. Does a single
+     * empty+fill so the list never flashes empty.
+     */
+    private renderSceneNotesListSync(
+        container: HTMLElement,
+        projectEntries: Array<{ owner: BookOwner; note: SceneNote }>,
+        orderedFiles: string[],
+        activeBookId: string | null
+    ): void {
         container.empty();
 
-        // Gather all notes across loaded books, grouped first by book title
-        // then by file path within that book.
-        const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
-
-        if (allEntries.length === 0) {
+        if (projectEntries.length === 0) {
             container.createEl('p', {
                 cls: 'book-smith-navigator-empty',
-                text: 'No scene notes yet. Press Ctrl+J in a paragraph to add one.'
+                text: activeBookId
+                    ? 'No scene notes yet. Press Ctrl+J in a paragraph to add one.'
+                    : 'Open a file in your book to see its scene notes.'
             });
             return;
         }
 
-        // Figure out the "active book" UUID from the current file for prioritized display.
-        let activeBookId: string | null = null;
-        if (activeFilePath) {
-            const entry = allEntries.find(e =>
-                activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
-            );
-            activeBookId = entry?.owner.uuid || null;
-        }
+        const owner = projectEntries[0].owner;
 
-        // Group by book UUID.
-        const byBook = new Map<string, { owner: typeof allEntries[0]['owner']; notes: typeof allEntries[0]['note'][] }>();
-        for (const { owner, note } of allEntries) {
-            const bucket = byBook.get(owner.uuid) || { owner, notes: [] };
-            bucket.notes.push(note);
-            byBook.set(owner.uuid, bucket);
-        }
-
-        // Sort: active book first, then alphabetic by title.
-        const bookOrder = Array.from(byBook.keys()).sort((a, b) => {
-            if (a === activeBookId) return -1;
-            if (b === activeBookId) return 1;
-            return (byBook.get(a)!.owner.title).localeCompare(byBook.get(b)!.owner.title);
-        });
-
-        const multipleBooks = bookOrder.length > 1;
-
-        bookOrder.forEach(uuid => {
-            const { owner, notes } = byBook.get(uuid)!;
-
-            if (multipleBooks) {
-                const bookHeader = container.createDiv({ cls: 'book-smith-scene-notes-book-header' });
-                bookHeader.createEl('h3', {
-                    cls: 'book-smith-scene-notes-book-title',
-                    text: owner.title + (uuid === activeBookId ? '  (current)' : '')
-                });
-            }
+        {
+            const notes = projectEntries.map(e => e.note);
 
             // Sub-group by relative file path within this book.
             const groups = new Map<string, typeof notes>();
@@ -1835,7 +1941,17 @@ export class ToolView extends ItemView {
                 arr.push(note);
                 groups.set(rel, arr);
             }
-            const sortedGroupKeys = Array.from(groups.keys()).sort();
+
+            // Sort file groups by their position in the book's chapter tree,
+            // falling back to alphabetical for files not found in the tree.
+            const sortedGroupKeys = Array.from(groups.keys()).sort((a, b) => {
+                const ai = orderedFiles.indexOf(a);
+                const bi = orderedFiles.indexOf(b);
+                if (ai === -1 && bi === -1) return a.localeCompare(b);
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+            });
 
             sortedGroupKeys.forEach(key => {
                 const section = container.createDiv({ cls: 'book-smith-scene-notes-group' });
@@ -1874,18 +1990,66 @@ export class ToolView extends ItemView {
                         text: [dateStr, `Line ${note.fromLine + 1}`].filter(Boolean).join(' · ')
                     });
 
-                    row.addEventListener('click', () => {
-                        this.selectSceneNote(note.id);
-                        void this.plugin.focusEditorOnNote(note);
-                    });
+                    row.dataset.noteId = note.id;
+                    // Click handling is done by the container-level delegate
+                    // in attachSceneNotesClickDelegate — no per-row listeners.
                 });
             });
+        }
+    }
+
+    /**
+     * Install a single mousedown delegate on the list container. We use
+     * `mousedown` rather than `click` because:
+     *   - `click` requires mousedown+mouseup to land on the SAME DOM node.
+     *     When notifyChange rebuilds the rows between press and release, the
+     *     browser silently drops the `click` event, so single-clicks were
+     *     intermittent.
+     *   - `mousedown` fires the instant the button goes down, before any
+     *     async rebuild can race with it. Every press reaches this handler.
+     *
+     * The delegate is attached once to the container (which is never
+     * replaced), so it survives all row rebuilds. Double-click is detected
+     * by timestamp + note id — immune to DOM replacement between presses,
+     * unlike the browser's native dblclick (which also requires same-target).
+     */
+    private attachSceneNotesClickDelegate(container: HTMLElement): void {
+        container.addEventListener('mousedown', (evt) => {
+            if (evt.button !== 0) return; // left-click only
+            const target = evt.target as HTMLElement | null;
+            if (!target) return;
+            const row = target.closest('.book-smith-scene-notes-row') as HTMLElement | null;
+            if (!row) return;
+            const noteId = row.dataset.noteId;
+            if (!noteId) return;
+
+            const now = Date.now();
+            const isDouble = (now - this.sceneNotesLastClickTime < 500)
+                && (this.sceneNotesLastClickId === noteId);
+            this.sceneNotesLastClickTime = now;
+            this.sceneNotesLastClickId = noteId;
+
+            // First press selects — idempotent if already selected, so the
+            // second press of a double-click just re-selects with no ill effect.
+            this.selectSceneNote(noteId);
+
+            // Second press on the SAME note within 500ms → navigate the
+            // main editor to that scene.
+            if (isDouble) {
+                const located = this.plugin.sceneNotesManager.getNoteById(noteId);
+                if (located) void this.plugin.focusEditorOnNote(located.note);
+            }
         });
     }
 
     private selectSceneNote(noteId: string): void {
         this.sceneNotesEditorNoteId = noteId;
-        if (this.sceneNotesContainer) this.renderSceneNotesList(this.sceneNotesContainer);
+        // Update active highlight directly in the DOM — no full re-render so there's no blink.
+        if (this.sceneNotesContainer) {
+            this.sceneNotesContainer.querySelectorAll<HTMLElement>('.book-smith-scene-notes-row').forEach(el => {
+                el.toggleClass('is-active', el.dataset.noteId === noteId);
+            });
+        }
 
         const editor = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
         if (!editor) return;
@@ -2047,6 +2211,7 @@ export class ToolView extends ItemView {
             this.sceneNotesTitleAutosaveTimer = null;
         }
         this.sceneNotesContainer = null;
+        this.sceneNotesViewEl = null;
         this.sceneNotesEditorNoteId = null;
     }
 

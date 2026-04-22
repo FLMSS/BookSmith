@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(cp \"C:/Users/menez/Desktop/Book Smith/book-smith-main/.claude/worktrees/loving-williamson/main.js\" \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/main.js\")",
+      "Read(//c/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/**)"
     ]
   }
 }

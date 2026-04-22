@@ -1,4 +1,4 @@
-import { Plugin, Notice, Editor, MarkdownView, TFile } from 'obsidian';
+import { Plugin, Notice, Editor, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
 import { BookSmithView } from './views/BookSmithView';
 import { ToolView } from './views/ToolsView';
 import { BookSmithSettingTab } from './settings/SettingTab';
@@ -466,10 +466,36 @@ export default class BookSmithPlugin extends Plugin {
             new Notice('File for this scene note is missing');
             return;
         }
-        const leaf = this.app.workspace.getLeaf(false);
-        await leaf.openFile(file, { active: true });
 
-        const view = leaf.view as MarkdownView;
+        // Target a markdown leaf in the main area — NOT `getLeaf(false)`,
+        // which returns the currently active leaf (often the Scene Notes
+        // tool panel itself when the user clicks there, so the .md would
+        // open inside the sidebar instead of the main editor).
+        // Prefer a leaf already showing this file; otherwise any markdown
+        // leaf in the main area; otherwise open a new tab.
+        let targetLeaf: WorkspaceLeaf | null = null;
+        this.app.workspace.iterateRootLeaves((leaf: WorkspaceLeaf) => {
+            if (targetLeaf) return;
+            if (leaf.view instanceof MarkdownView && leaf.view.file?.path === note.filePath) {
+                targetLeaf = leaf;
+            }
+        });
+        if (!targetLeaf) {
+            this.app.workspace.iterateRootLeaves((leaf: WorkspaceLeaf) => {
+                if (targetLeaf) return;
+                if (leaf.view instanceof MarkdownView) {
+                    targetLeaf = leaf;
+                }
+            });
+        }
+        if (!targetLeaf) {
+            targetLeaf = this.app.workspace.getLeaf('tab');
+        }
+
+        await targetLeaf.openFile(file, { active: true });
+        this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+
+        const view = targetLeaf.view as MarkdownView;
         const cm = (view as any)?.editor?.cm as EditorView | undefined;
         if (!cm) return;
 
