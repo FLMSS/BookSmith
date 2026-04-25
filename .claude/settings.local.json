@@ -16,7 +16,12 @@
       "Read(//c/Users/menez/AppData/Roaming/obsidian/**)",
       "Read(//c/Users/menez/**)",
       "Bash(npx esbuild *)",
-      "Bash(git commit -m 'Fix gutter layout: target .cm-contentContainer instead of .cm-scroller *)"
+      "Bash(git commit -m 'Fix gutter layout: target .cm-contentContainer instead of .cm-scroller *)",
+      "mcp__lean-ctx__ctx_gain",
+      "Bash(node esbuild.config.mjs production)",
+      "Bash(git commit -m 'Fix Today word count showing stale positive count after write+delete *)",
+      "Bash(git commit -m 'Scope scene notes gutter to BookSmith files only via CM6 Compartment *)",
+      "Bash(git commit -m 'Change pomodoro circle color to Obsidian purple *)"
     ]
   }
 }
