@@ -20,7 +20,7 @@
 }
 
 .book-smith-toolbar-btn {
-    padding: 5px 10px;
+    padding: 5px 8px;
     border-radius: var(--book-smith-border-radius);
     background: var(--book-smith-background);
     cursor: pointer;
@@ -32,6 +32,16 @@
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
+}
+
+/*
+ * "New Project" toolbar button — sized to its content so the row no longer
+ * forces both CTAs into equal halves with big empty stretches of padding.
+ * "Manage Projects" is also sized to content via its span sizing rule below.
+ */
+.book-smith-toolbar-btn.book-smith-toolbar-btn-new,
+.book-smith-toolbar-btn.book-smith-toolbar-btn-manage {
+    flex: 0 0 auto;
 }
 
 .book-smith-toolbar-btn svg {
@@ -114,6 +124,56 @@
 
 .book-smith-book-header-settings-glyph {
     font-size: 13px;
+    line-height: 1;
+    font-family: "Segoe UI Symbol", var(--font-interface), sans-serif;
+}
+
+/*
+ * "Jump to active file's project" button — same dimensions as the settings
+ * gear but pinned to the TOP-right corner of the cover. Hidden by default;
+ * the BookSmithView toggles `.is-visible` when the active file resolves to a
+ * project other than the one currently shown in the left pane.
+ */
+.book-smith-book-header-jump-btn {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 0;
+    background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+    color: var(--text-muted);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+    box-shadow:
+        0 0 0 1px var(--background-modifier-border),
+        0 6px 14px rgba(0, 0, 0, 0.16);
+    transition: transform 120ms ease, color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.book-smith-book-header-jump-btn.is-visible {
+    display: flex;
+}
+
+.book-smith-book-header-jump-btn:hover {
+    background: color-mix(in srgb, var(--background-primary) 78%, var(--interactive-hover) 22%);
+    color: var(--text-normal);
+    transform: translateY(-1px);
+    box-shadow:
+        0 0 0 1px var(--background-modifier-border-hover),
+        0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.book-smith-book-header-jump-btn:active {
+    transform: translateY(0);
+}
+
+.book-smith-book-header-jump-glyph {
+    font-size: 14px;
     line-height: 1;
     font-family: "Segoe UI Symbol", var(--font-interface), sans-serif;
 }

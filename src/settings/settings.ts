@@ -22,6 +22,13 @@ export interface BookSmithSettings {
     defaultAuthor: string;
     defaultBookPath: string;
     lastBookId?: string;
+    /**
+     * Whether the Manage Projects modal renders in compact (switcher-style)
+     * rows. When true: covers & descriptions hidden, tighter spacing — the
+     * former Switch Projects layout. When false (default): full rich rows
+     * with cover art and metadata.
+     */
+    manageBooksCompact?: boolean;
 
     // 模板配置
     templates: {
@@ -90,6 +97,7 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
     defaultAuthor: 'FelMNZ',
     defaultBookPath: 'books',
     lastBookId: '',
+    manageBooksCompact: false,
     templates: {
         default: 'prose',
         custom: {

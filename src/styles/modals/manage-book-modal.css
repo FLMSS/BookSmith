@@ -266,3 +266,74 @@
     line-height: 1.1;
     margin-top: 8px;
 }
+
+/*
+ * Compact-view toggle button in the Manage modal toolbar. Matches the
+ * height of the adjacent Import / New folder CTAs but is square and icon-only.
+ */
+.book-smith-manage-compact-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.book-smith-manage-compact-btn:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.book-smith-manage-compact-btn.is-active {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.book-smith-manage-compact-btn .svg-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/*
+ * Compact mode — former "Switch Projects" layout inside Manage. Hides heavy
+ * visuals (cover, description) and tightens spacing so the list reads as a
+ * dense switcher. Action buttons and actions row stay intact so Select / Edit
+ * / Delete / folder-assign are all still one click away.
+ */
+.book-smith-manage-books-modal.is-compact .book-smith-book-container {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    gap: 10px;
+}
+
+.book-smith-manage-books-modal.is-compact .book-smith-book-container:hover {
+    transform: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.book-smith-manage-books-modal.is-compact .book-smith-book-cover {
+    display: none;
+}
+
+.book-smith-manage-books-modal.is-compact .book-smith-book-container .setting-item-name {
+    font-size: 1.05em;
+    margin-bottom: 0;
+}
+
+.book-smith-manage-books-modal.is-compact .book-smith-book-container .setting-item-name .subtitle {
+    font-size: 0.85em;
+    margin-top: 2px;
+}
+
+.book-smith-manage-books-modal.is-compact .book-smith-book-container .setting-item-description {
+    display: none;
+}

@@ -5,7 +5,6 @@ import { Book, BookWritingPeriod } from '../types/book';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { CreateBookModal } from '../modals/CreateBookModal';
 import { ManageBooksModal } from '../modals/ManageBooksModal';
-import { SwitchBookModal } from '../modals/SwitchBookModal';
 import { ChapterTree } from '../components/ChapterTree';
 import { FileEventManager } from '../services/FileEventManager';
 import { ReferenceManager } from '../services/ReferenceManager';
@@ -42,6 +41,13 @@ export class BookSmithView extends ItemView {
     private fileEventManager: FileEventManager;
     private referenceManager: ReferenceManager;
     private isRenamingFile: boolean = false;
+    /**
+     * Reference to the small "jump to active file's project" button in the
+     * book-header cover. Ephemeral — re-created on each renderContent pass.
+     * Stored on `this` so the file-open listener can flip its visibility
+     * without a full re-render.
+     */
+    private jumpToProjectBtn: HTMLElement | null = null;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -61,6 +67,14 @@ export class BookSmithView extends ItemView {
         this.registerEvent(
             this.plugin.statsManager.onStatsChange(() => {
                 this.renderStats(this.containerEl.children[1] as HTMLElement);
+            })
+        );
+        // Re-check whether the active file belongs to a different project
+        // whenever the user opens a file — that's the only moment the
+        // "jump to active file's project" corner button's visibility can change.
+        this.registerEvent(
+            this.app.workspace.on('file-open', () => {
+                void this.updateJumpToProjectButtonVisibility();
             })
         );
     }
@@ -174,7 +188,7 @@ export class BookSmithView extends ItemView {
     private renderToolbar(container: HTMLElement) {
         const toolbar = container.createDiv({ cls: 'book-smith-toolbar' });
 
-        const newBookBtn = toolbar.createEl('button', { cls: 'book-smith-toolbar-btn' });
+        const newBookBtn = toolbar.createEl('button', { cls: 'book-smith-toolbar-btn book-smith-toolbar-btn-new' });
         setIcon(newBookBtn, 'create-new');
         newBookBtn.appendChild(createSpan({ text: ` ${i18n.t('NEW_BOOK')}` }));
         newBookBtn.addEventListener('click', () => {
@@ -188,19 +202,21 @@ export class BookSmithView extends ItemView {
             }).open();
         });
 
-        const switchBookBtn = toolbar.createEl('button', { cls: 'book-smith-toolbar-btn' });
-        setIcon(switchBookBtn, 'switch');
-        switchBookBtn.appendChild(createSpan({ text: ` ${i18n.t('SWITCH_BOOK')}` }));
-        switchBookBtn.addEventListener('click', () => {
-            this.switchBook();
-        });
-
-        const manageBookBtn = toolbar.createEl('button', { cls: 'book-smith-toolbar-btn' });
+        const manageBookBtn = toolbar.createEl('button', { cls: 'book-smith-toolbar-btn book-smith-toolbar-btn-manage' });
         setIcon(manageBookBtn, 'library');
         manageBookBtn.appendChild(createSpan({ text: ` ${i18n.t('MANAGE_BOOK')}` }));
         manageBookBtn.addEventListener('click', async () => {
             new ManageBooksModal(this.app, this.plugin, async (result) => {
-                if (result.type === 'imported' && result.bookId) {
+                if (result.type === 'selected' && result.bookId) {
+                    // Switch action moved from the old Switch Projects modal.
+                    const target = await this.plugin.bookManager.getBookById(result.bookId);
+                    this.plugin.settings.lastBookId = result.bookId;
+                    await this.plugin.saveSettings();
+                    await this.refreshView();
+                    if (target) {
+                        new Notice(i18n.t('SWITCHED_TO_BOOK', { title: target.basic.title }));
+                    }
+                } else if (result.type === 'imported' && result.bookId) {
                     // 处理导入书籍的情况
                     this.plugin.settings.lastBookId = result.bookId;
                     await this.plugin.saveSettings();
@@ -235,6 +251,11 @@ export class BookSmithView extends ItemView {
         container.createDiv({ cls: 'book-smith-divider' });
         const bookContent = container.createDiv({ cls: 'book-smith-content' });
 
+        // The jump button lives in the book-header cover, so it only exists
+        // while a project is loaded. Clear the stale reference before rendering
+        // — if we drop back to the empty state, there's no button to toggle.
+        this.jumpToProjectBtn = null;
+
         // Get currently selected book
         const currentBookId = this.plugin.settings.lastBookId;
         if (!currentBookId || !this.currentBook) {
@@ -264,6 +285,33 @@ export class BookSmithView extends ItemView {
                 void this.refreshView();
             }).open();
         });
+
+        // "Jump to active file's project" button — top-right corner of the
+        // cover, mirroring the settings gear at the bottom-right. Visible only
+        // when the active file belongs to a DIFFERENT project than the one
+        // currently shown; otherwise hidden (has `is-visible` class toggled).
+        const jumpBtn = coverContainer.createEl('button', {
+            cls: 'book-smith-book-header-jump-btn',
+            attr: {
+                type: 'button',
+                'aria-label': 'Switch to active file\'s project'
+            }
+        });
+        // Use a Unicode glyph (mirroring the settings gear approach) so the
+        // icon's pixel size is governed by font-size and matches the gear.
+        // The previous Lucide `switch` SVG path read tiny inside the 28px
+        // button regardless of width overrides.
+        jumpBtn.createSpan({
+            cls: 'book-smith-book-header-jump-glyph',
+            text: '⇄'
+        });
+        jumpBtn.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            void this.switchToActiveFileProject();
+        });
+        this.jumpToProjectBtn = jumpBtn;
+        void this.updateJumpToProjectButtonVisibility();
 
         if (this.currentBook.basic.cover) {
             coverContainer.createEl('img', {
@@ -789,18 +837,63 @@ export class BookSmithView extends ItemView {
     }
 
     // === Interaction handlers ===
-    private async switchBook() {
-        const books = await this.plugin.bookManager.getAllBooks();
-        if (books.length === 0) {
-            new Notice(i18n.t('NO_BOOKS_TO_SWITCH'));
+
+    /**
+     * Jump the left pane to whatever project owns the currently open file.
+     * Used by the corner button on the book-header cover. Resolves the owner
+     * via SceneNotesManager's findBookForFile (walks upward from the file
+     * looking for book-config.json).
+     */
+    private async switchToActiveFileProject() {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            new Notice('No file open — nothing to switch to');
             return;
         }
+        const owner = await this.plugin.sceneNotesManager.findBookForFile(activeFile.path);
+        if (!owner) {
+            new Notice('Active file doesn\'t belong to any BookSmith project');
+            return;
+        }
+        if (owner.uuid === this.currentBook?.basic.uuid) {
+            new Notice('Already on this file\'s project');
+            return;
+        }
+        this.plugin.settings.lastBookId = owner.uuid;
+        await this.plugin.saveSettings();
+        await this.refreshView();
+        new Notice(i18n.t('SWITCHED_TO_BOOK', { title: owner.title }));
+    }
 
-        new SwitchBookModal(this.app, this.plugin, books, async (selectedBook) => {
-            this.plugin.settings.lastBookId = selectedBook.basic.uuid;
-            await this.plugin.saveSettings();
-            await this.refreshView();
-            new Notice(i18n.t('SWITCHED_TO_BOOK', { title: selectedBook.basic.title }));
-        }).open();
+    /**
+     * Re-check whether the active file belongs to a different project than
+     * the one currently shown, and toggle the corner "jump" button's visibility
+     * accordingly. Called on first paint and on every file-open event.
+     *
+     * Guarded against rapid file switches: capture the path we started with
+     * and discard the result if the active file changed (or the button was
+     * torn down) while we were waiting on findBookForFile.
+     */
+    private async updateJumpToProjectButtonVisibility() {
+        const btn = this.jumpToProjectBtn;
+        if (!btn) return;
+        const activeFile = this.app.workspace.getActiveFile();
+        const startPath = activeFile?.path ?? null;
+        let shouldShow = false;
+        let ownerTitle: string | null = null;
+        if (activeFile) {
+            const owner = await this.plugin.sceneNotesManager.findBookForFile(activeFile.path);
+            if (owner && owner.uuid !== this.currentBook?.basic.uuid) {
+                shouldShow = true;
+                ownerTitle = owner.title;
+            }
+        }
+        // Discard stale resolutions: button gone, or active file changed.
+        if (this.jumpToProjectBtn !== btn) return;
+        if ((this.app.workspace.getActiveFile()?.path ?? null) !== startPath) return;
+        if (shouldShow && ownerTitle) {
+            btn.setAttribute('aria-label', `Switch to "${ownerTitle}" (owns the active file)`);
+        }
+        btn.toggleClass('is-visible', shouldShow);
     }
 }
