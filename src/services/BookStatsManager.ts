@@ -185,8 +185,10 @@ export class BookStatsManager {
         const wordsDeletedDelta = rawRemoved;
 
         // 更新每日字数
+        // Track net contribution (adds minus deletes) so the value is consistent
+        // with daily_progress.net_change and never stays inflated after deletions.
         const dailyWords = { ...stats.daily_words };
-        const nextDailyWords = Math.max(0, (dailyWords[today] || 0) + wordsAddedDelta);
+        const nextDailyWords = Math.max(0, (dailyWords[today] || 0) + wordsAddedDelta - wordsDeletedDelta);
         if (nextDailyWords > 0) {
             dailyWords[today] = nextDailyWords;
         } else {
@@ -231,6 +233,17 @@ export class BookStatsManager {
                 iteration_deletions: iterationDeletions,
                 old_deletions: oldDeletions
             };
+        }
+
+        // Reconciliation guard: enforce the invariant net_change = total_words − start_of_day_words.
+        // total_words is always recomputed from disk (ground truth), so any drift caused by
+        // timing gaps between flush cycles (e.g. write captured but delete missed) is corrected here.
+        const todayEntry = dailyProgress[today];
+        if (todayEntry?.start_of_day_words !== undefined) {
+            const trueNet = totalWordCount - todayEntry.start_of_day_words;
+            if (todayEntry.net_change !== trueNet) {
+                dailyProgress[today] = { ...todayEntry, net_change: trueNet };
+            }
         }
 
         tracker.pendingAddedWords = 0;
