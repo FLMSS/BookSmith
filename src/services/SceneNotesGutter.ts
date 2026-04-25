@@ -1,5 +1,5 @@
 import { editorInfoField } from 'obsidian';
-import { Extension, RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Compartment, Extension, RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { SceneNotesManager } from './SceneNotesManager';
 import { SceneNote } from '../types/sceneNote';
@@ -12,12 +12,15 @@ export const sceneNotesRepaintEffect = StateEffect.define<null>();
  *  - Draws a flag marker in the gutter on any line that falls within an
  *    anchored scene-note range.
  *  - On gutter click, invokes the provided handler with the clicked note.
+ *  - Only activates (adds the gutter column) for files under the BookSmith
+ *    book root; all other editors are left completely untouched.
  *
  * The manager lookup is live (fresh on each paint) so note additions/removals
  * reflect immediately once the manager notifies and the editor paints.
  */
 export function buildSceneNotesGutter(
     manager: SceneNotesManager,
+    getBookRoot: () => string | undefined,
     onMarkerClick: (note: SceneNote, view: EditorView) => void
 ): Extension {
     /** Per-line gutter marker for a scene note. */
@@ -227,7 +230,53 @@ export function buildSceneNotesGutter(
         }
     });
 
-    return [markerField, sceneNotesGutter, lineTrackerPlugin];
+    // --- Per-editor activation via Compartment ---
+    //
+    // The gutter extension is registered globally, but we only want the gutter
+    // column (and its 22px layout cost) in editors whose file lives under the
+    // BookSmith book root. Files outside that folder get an empty compartment —
+    // no gutter, no layout shift, no markers.
+    //
+    // The routerPlugin checks the file path on construction (initial open) and
+    // on every ViewUpdate where the path changes (tab switch). Reconfiguration
+    // is deferred via queueMicrotask so it never dispatches mid-update.
+    const gutterCompartment = new Compartment();
+    const activeExtensions: Extension = [markerField, sceneNotesGutter, lineTrackerPlugin];
+
+    const isBookSmithFile = (view: EditorView): boolean => {
+        const path = currentFilePath(view);
+        const root = getBookRoot();
+        return !!(path && root && (path === root || path.startsWith(root + '/')));
+    };
+
+    const scheduleReconfigure = (view: EditorView, active: boolean) => {
+        queueMicrotask(() => {
+            try {
+                view.dispatch({ effects: gutterCompartment.reconfigure(active ? activeExtensions : []) });
+            } catch {
+                // View was destroyed before the microtask ran — safe to ignore.
+            }
+        });
+    };
+
+    const routerPlugin = ViewPlugin.fromClass(class {
+        private trackedPath: string | null = null;
+
+        constructor(view: EditorView) {
+            this.trackedPath = currentFilePath(view);
+            scheduleReconfigure(view, isBookSmithFile(view));
+        }
+
+        update(u: ViewUpdate) {
+            const newPath = currentFilePath(u.view);
+            if (newPath === this.trackedPath) return;
+            this.trackedPath = newPath;
+            scheduleReconfigure(u.view, isBookSmithFile(u.view));
+        }
+    });
+
+    // Start empty; routerPlugin activates the gutter for BookSmith files.
+    return [gutterCompartment.of([]), routerPlugin];
 }
 
 /**

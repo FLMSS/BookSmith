@@ -86,10 +86,13 @@ export default class BookSmithPlugin extends Plugin {
         this.registerEditorExtension(fountainCommentExtension);
 
         // Register the Scene Notes gutter extension (per-editor).
+        // getBookRoot is passed so the gutter only activates for BookSmith files.
         this.registerEditorExtension(
-            buildSceneNotesGutter(this.sceneNotesManager, (note) => {
-                this.openSceneNoteInPanel(note.id);
-            })
+            buildSceneNotesGutter(
+                this.sceneNotesManager,
+                () => this.settings.defaultBookPath,
+                (note) => { this.openSceneNoteInPanel(note.id); }
+            )
         );
 
         // Repaint gutters when notes change.
