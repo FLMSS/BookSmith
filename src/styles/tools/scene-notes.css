@@ -2,6 +2,39 @@
 .book-smith-scene-notes-gutter {
     min-width: 22px;
 }
+
+/*
+ * Right-margin gutter placement.
+ *
+ * Problem: registering a CM6 gutter adds a 22px-wide column inside
+ * `.cm-scroller`, which pushes `.cm-content` (and every line of body
+ * text) 22px to the right. The inline-title element lives outside the
+ * gutter flex group, so it does NOT get pushed — body text ends up
+ * misaligned with the title in every editor.
+ *
+ * Fix: flex-reverse `.cm-scroller` so the gutter sits on the RIGHT
+ * side of the editor. `!important` is needed because Obsidian's own
+ * `.cm-scroller { flex-direction: row }` rule loads after ours and
+ * was winning the cascade (same specificity, later rule wins).
+ *
+ * `.cm-editor` selector also reversed for the same reason — Obsidian
+ * applies flex layout there too in some modes.
+ */
+/*
+ * In Obsidian's CM6 DOM, the flex parent of gutters and content is
+ * `.cm-contentContainer` — NOT `.cm-scroller` as the upstream CM6 docs
+ * suggest. Confirmed via DevTools: `.cm-contentContainer` carries the
+ * `flex` badge and holds `.cm-gutters.cm-gutters-before` + `.cm-content`
+ * as direct flex children. Earlier attempts targeting `.cm-scroller`
+ * failed because that element has only one flex child below it, so its
+ * direction was irrelevant.
+ *
+ * Applied unconditionally: the gutter extension is registered globally
+ * for every editor, so reversing flow everywhere is consistent.
+ */
+.cm-contentContainer {
+    flex-direction: row-reverse !important;
+}
 .book-smith-scene-note-marker {
     display: flex;
     align-items: center;

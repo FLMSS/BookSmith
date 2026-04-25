@@ -3,7 +3,20 @@
     "allow": [
       "Bash(npm run:*)",
       "Bash(cp \"C:/Users/menez/Desktop/Book Smith/book-smith-main/.claude/worktrees/loving-williamson/main.js\" \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/main.js\")",
-      "Read(//c/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/**)"
+      "Read(//c/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/**)",
+      "Bash(cp \"C:/Users/menez/Desktop/Book Smith/book-smith-main/.claude/worktrees/loving-williamson/styles.css\" \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/styles.css\")",
+      "Bash(cp main.js \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/main.js\")",
+      "Bash(cp styles.css \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/styles.css\")",
+      "Bash(cp \"C:\\\\Users\\\\menez\\\\Desktop\\\\Book Smith\\\\book-smith-main\\\\.claude\\\\worktrees\\\\loving-williamson\\\\main.js\" \"C:\\\\Users\\\\menez\\\\OneDrive\\\\Documents\\\\Obsidian Vault\\\\Vault I\\\\.obsidian\\\\plugins\\\\book-smith-fork\\\\main.js\")",
+      "Bash(cp \"C:\\\\Users\\\\menez\\\\Desktop\\\\Book Smith\\\\book-smith-main\\\\.claude\\\\worktrees\\\\loving-williamson\\\\styles.css\" \"C:\\\\Users\\\\menez\\\\OneDrive\\\\Documents\\\\Obsidian Vault\\\\Vault I\\\\.obsidian\\\\plugins\\\\book-smith-fork\\\\styles.css\")",
+      "Bash(cp main.js \"C:\\\\Users\\\\menez\\\\OneDrive\\\\Documents\\\\Obsidian Vault\\\\Vault I\\\\.obsidian\\\\plugins\\\\book-smith-fork\\\\main.js\")",
+      "Bash(cp styles.css \"C:\\\\Users\\\\menez\\\\OneDrive\\\\Documents\\\\Obsidian Vault\\\\Vault I\\\\.obsidian\\\\plugins\\\\book-smith-fork\\\\styles.css\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Read(//c/Users/menez/AppData/Roaming/obsidian/**)",
+      "Read(//c/Users/menez/**)",
+      "Bash(npx esbuild *)",
+      "Bash(git commit -m 'Fix gutter layout: target .cm-contentContainer instead of .cm-scroller *)"
     ]
   }
 }
