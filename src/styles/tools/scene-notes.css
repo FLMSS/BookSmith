@@ -21,19 +21,60 @@
  * applies flex layout there too in some modes.
  */
 /*
- * In Obsidian's CM6 DOM, the flex parent of gutters and content is
- * `.cm-contentContainer` — NOT `.cm-scroller` as the upstream CM6 docs
- * suggest. Confirmed via DevTools: `.cm-contentContainer` carries the
- * `flex` badge and holds `.cm-gutters.cm-gutters-before` + `.cm-content`
- * as direct flex children. Earlier attempts targeting `.cm-scroller`
- * failed because that element has only one flex child below it, so its
- * direction was irrelevant.
+ * Right-margin gutter — absolute positioning approach.
  *
- * Applied unconditionally: the gutter extension is registered globally
- * for every editor, so reversing flow everywhere is consistent.
+ * The core problem: any gutter registered with CM6 occupies a flex slot
+ * inside `.cm-contentContainer`, stealing width from `.cm-content` and
+ * making lines wrap sooner. Earlier attempts (flex-direction:row-reverse,
+ * min-width:100%) moved the gutter visually but still reduced content width
+ * or caused text to shift left/right.
+ *
+ * Solution: pull `.cm-gutters` entirely out of the flex flow with
+ * `position:absolute` and anchor it to the right edge of the content
+ * container. `.cm-content` then receives the full container width — the
+ * same wrap column as a gutter-free editor — and the flag column floats
+ * in the right margin, overlapping only the whitespace area beyond text.
+ *
+ * `position:relative` on `.cm-contentContainer` is safe to apply globally:
+ * it establishes a containing block without changing layout geometry.
+ * CM6's sticky gutters remain sticky relative to `.cm-scroller` (their
+ * scroll ancestor), unaffected by the relative ancestor added here.
+ *
+ * The BookSmith gutter overrides CM6's `position:sticky` with
+ * `position:absolute` so it spans the full document height and each
+ * marker stays vertically anchored to its line as the user scrolls.
  */
-.cm-contentContainer {
-    flex-direction: row-reverse !important;
+/*
+ * Anchor to .cm-sizer, NOT .cm-contentContainer.
+ *
+ * .cm-contentContainer spans the full editor width — anchoring `right: 0`
+ * there puts the gutter at the far edge of the editor, far from the
+ * centered 61-char text column. .cm-sizer wraps the centered content
+ * (its width matches Obsidian's readable-line-width), so positioning the
+ * gutter at .cm-sizer's right edge places it immediately past the last
+ * column of text — exactly where a typewriter-page right margin lives.
+ */
+.cm-sizer:has(.book-smith-scene-notes-gutter) {
+    position: relative;
+    overflow: visible;
+}
+
+.cm-gutters:has(.book-smith-scene-notes-gutter) {
+    position: absolute !important;
+    /* CM6 sets `left: 0` on .cm-gutters by default; with width:22px that
+       wins over `right` and pins the gutter to the LEFT. Cancel left and
+       use `left: 100%` to plant the gutter's left edge at .cm-sizer's
+       right edge — flags end up just past the text column, in the margin. */
+    /* `ch` is the width of "0" in the current font — exact in monospace.
+       +3ch = three Courier characters of breathing room past the text column. */
+    left: calc(100% + 3ch) !important;
+    right: auto !important;
+    top: 0;
+    bottom: 0;
+    width: 22px;
+    z-index: 5;
+    background: transparent;
+    border: none;
 }
 .book-smith-scene-note-marker {
     display: flex;
@@ -46,11 +87,16 @@
     color: var(--scene-note-color, var(--text-accent));
     cursor: pointer;
     opacity: 0.9;
+    /* Optical alignment: the ⚑ glyph has a heavy bottom flag and visually
+       sits low against its baseline. Nudge up ~2.5px so it reads as level
+       with the line it's anchored to. */
+    transform: translateY(-2.5px);
     transition: opacity 120ms ease, transform 120ms ease;
 }
 .book-smith-scene-note-marker:hover {
     opacity: 1;
-    transform: scale(1.15);
+    /* Preserve the optical translateY from the base rule. */
+    transform: translateY(-2.5px) scale(1.15);
 }
 
 /* Flash highlight when jumping to a note */
