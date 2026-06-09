@@ -30,6 +30,28 @@ export interface BookSmithSettings {
      */
     manageBooksCompact?: boolean;
 
+    /**
+     * When a scene note is clicked in the panel, briefly glow its anchored
+     * paragraph purple in any editor where it's currently visible (no
+     * scrolling/moving). Default on.
+     */
+    sceneNoteGlowOnClick?: boolean;
+
+    /**
+     * Glow shape: when true (default), the highlight spans the full row/column
+     * width. When false, it hugs the actual text extent (stops where the text
+     * ends on each row). Only relevant when `sceneNoteGlowOnClick` is on.
+     */
+    sceneNoteGlowFullRow?: boolean;
+
+    /**
+     * When true, the click glow takes the note's flag colour instead of the
+     * default purple (a yellow flag glows yellow, etc.). Rendered at low
+     * opacity so every colour stays light and pleasant. Default off.
+     * Notes with no flag colour fall back to purple.
+     */
+    sceneNoteGlowMatchColor?: boolean;
+
     // 模板配置
     templates: {
         default: string;
@@ -98,6 +120,9 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
     defaultBookPath: 'books',
     lastBookId: '',
     manageBooksCompact: false,
+    sceneNoteGlowOnClick: true,
+    sceneNoteGlowFullRow: true,
+    sceneNoteGlowMatchColor: false,
     templates: {
         default: 'prose',
         custom: {

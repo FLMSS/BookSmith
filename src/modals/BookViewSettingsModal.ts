@@ -7,6 +7,7 @@ import { getDailyRolloverOptions, getLogicalDayISODate, normalizeDailyRolloverMi
 
 export class BookViewSettingsModal extends Modal {
     private statsSectionExpanded = false;
+    private sceneNotesSectionExpanded = false;
     private projectManagementSectionExpanded = false;
     private coverSectionExpanded = false;
     private goalSectionExpanded = false;
@@ -62,6 +63,7 @@ export class BookViewSettingsModal extends Modal {
         const sectionList = container.createDiv({ cls: 'book-smith-book-view-settings-list' });
 
         this.renderStatsSection(sectionList);
+        this.renderSceneNotesSection(sectionList);
         this.renderProjectManagementSection(sectionList);
         this.renderCoverSection(sectionList);
         this.renderGoalSection(sectionList);
@@ -120,6 +122,82 @@ export class BookViewSettingsModal extends Modal {
         this.addInfoToggle(detail, 'Completion', 'completion');
         this.addInfoToggle(detail, 'Writing days', 'writingDays');
         this.addInfoToggle(detail, 'Daily average value', 'dailyAverage');
+    }
+
+    private renderSceneNotesSection(sectionList: HTMLElement): void {
+        const section = sectionList.createDiv({ cls: 'book-smith-book-view-settings-section' });
+        const sectionHeader = section.createEl('button', {
+            cls: 'book-smith-book-view-settings-section-header',
+            attr: { type: 'button' }
+        });
+
+        const left = sectionHeader.createDiv({ cls: 'book-smith-book-view-settings-section-left' });
+        const chevron = left.createSpan({ cls: 'book-smith-book-view-settings-chevron' });
+        setIcon(chevron, this.sceneNotesSectionExpanded ? 'chevron-down' : 'chevron-right');
+        left.createEl('span', { text: 'Scene Notes' });
+
+        const glowOn = this.plugin.settings.sceneNoteGlowOnClick !== false;
+        sectionHeader.createEl('span', {
+            cls: `book-smith-book-view-settings-badge${glowOn ? ' is-on' : ' is-off'}`,
+            text: glowOn ? 'Glow on' : 'Glow off'
+        });
+
+        sectionHeader.addEventListener('click', () => {
+            this.sceneNotesSectionExpanded = !this.sceneNotesSectionExpanded;
+            this.onOpen();
+        });
+
+        if (!this.sceneNotesSectionExpanded) {
+            return;
+        }
+
+        const detail = section.createDiv({ cls: 'book-smith-book-view-settings-detail' });
+
+        new Setting(detail)
+            .setName('Glow note in editor on click')
+            .setDesc('When you click a scene note, briefly glow its paragraph in any open editor where it is visible. Does not scroll or move anything.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(glowOn)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowOnClick = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                        this.onOpen();
+                    });
+            });
+
+        if (!glowOn) {
+            return;
+        }
+
+        const fullRow = this.plugin.settings.sceneNoteGlowFullRow !== false;
+        new Setting(detail)
+            .setName('Highlight full row width')
+            .setDesc('On: glow spans the whole row width. Off: glow hugs the actual text, stopping where each line ends.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(fullRow)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowFullRow = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        const matchColor = this.plugin.settings.sceneNoteGlowMatchColor === true;
+        new Setting(detail)
+            .setName('Match flag color')
+            .setDesc('On: the glow takes the note\'s flag color (a yellow flag glows yellow), kept light. Off: always purple.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(matchColor)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowMatchColor = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
     }
 
     private renderProjectManagementSection(sectionList: HTMLElement): void {

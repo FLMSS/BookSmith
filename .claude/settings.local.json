@@ -21,7 +21,14 @@
       "Bash(node esbuild.config.mjs production)",
       "Bash(git commit -m 'Fix Today word count showing stale positive count after write+delete *)",
       "Bash(git commit -m 'Scope scene notes gutter to BookSmith files only via CM6 Compartment *)",
-      "Bash(git commit -m 'Change pomodoro circle color to Obsidian purple *)"
+      "Bash(git commit -m 'Change pomodoro circle color to Obsidian purple *)",
+      "Bash(cd \"C:/Users/menez/Desktop/Book Smith/book-smith-main/.claude/worktrees/loving-williamson\" && npm run build 2>&1 | tail -8 && cp main.js manifest.json \"C:/Users/menez/OneDrive/Documents/Obsidian Vault/Vault I/.obsidian/plugins/book-smith-fork/\" && echo \"Deployed\")",
+      "mcp__lean-ctx__ctx_knowledge",
+      "mcp__lean-ctx__ctx_read",
+      "mcp__lean-ctx__ctx_search",
+      "mcp__lean-ctx__ctx_edit",
+      "mcp__lean-ctx__ctx_shell",
+      "mcp__lean-ctx__ctx_tree"
     ]
   }
 }

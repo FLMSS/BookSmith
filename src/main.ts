@@ -535,4 +535,111 @@ export default class BookSmithPlugin extends Plugin {
             console.warn('Scene note highlight failed:', err);
         }
     }
+
+    /**
+     * Subtle "where is this?" cue: when a scene note is clicked in the panel,
+     * briefly glow its anchored paragraph purple in any already-open editor
+     * where the range is currently visible. Does NOT open the file, scroll,
+     * or change focus — if the paragraph isn't on screen, nothing happens.
+     * Gated by the `sceneNoteGlowOnClick` setting.
+     */
+    public glowSceneNoteInEditor(note: SceneNote): void {
+        if (this.settings.sceneNoteGlowOnClick === false) return;
+
+        this.app.workspace.iterateRootLeaves((leaf: WorkspaceLeaf) => {
+            const view = leaf.view;
+            if (!(view instanceof MarkdownView)) return;
+            if (view.file?.path !== note.filePath) return;
+
+            const cm = (view as any)?.editor?.cm as EditorView | undefined;
+            if (!cm) return;
+
+            try {
+                const startLineNum = Math.min(Math.max(note.fromLine + 1, 1), cm.state.doc.lines);
+                const endLineNum = Math.min(Math.max(note.toLine + 1, 1), cm.state.doc.lines);
+                const startBlock = cm.state.doc.line(startLineNum);
+                const endBlock = cm.state.doc.line(endLineNum);
+
+                const fromCoords = cm.coordsAtPos(startBlock.from);
+                const toCoords = cm.coordsAtPos(endBlock.to);
+                // coordsAtPos returns null when the position isn't in the
+                // rendered viewport — our "is it visible?" test. Skip if the
+                // paragraph isn't on screen (we never scroll to it).
+                if (!fromCoords) return;
+
+                const scroller = cm.scrollDOM;
+                const scrollerRect = scroller.getBoundingClientRect();
+                // Bail if the line sits outside the visible band of the scroller.
+                if (fromCoords.bottom < scrollerRect.top || fromCoords.top > scrollerRect.bottom) return;
+
+                const glow = document.createElement('div');
+                glow.addClass('book-smith-scene-note-glow');
+                // Optionally tint the glow to the note's flag colour (kept
+                // light via the low-opacity color-mix in CSS). Falls back to
+                // the default purple when off or when the note has no colour.
+                if (this.settings.sceneNoteGlowMatchColor && note.color) {
+                    glow.style.setProperty('--glow-color', note.color);
+                }
+
+                // Two shapes, per the `sceneNoteGlowFullRow` setting:
+                //  - full row (default): union each `.cm-line` element box, so
+                //    the glow spans the whole row/column width.
+                //  - tight to text: a DOM Range over each line's contents yields
+                //    one client rect per wrapped row, each tight to the glyphs,
+                //    so the right edge sits at the real end of the widest line.
+                // Both handle wrapped lines (one doc line, several rows).
+                const fullRow = this.settings.sceneNoteGlowFullRow !== false;
+                let uTop = Infinity, uBottom = -Infinity, uLeft = Infinity, uRight = -Infinity;
+                const absorb = (r: DOMRect | DOMRectReadOnly) => {
+                    if (r.width === 0 && r.height === 0) return;
+                    uTop = Math.min(uTop, r.top);
+                    uBottom = Math.max(uBottom, r.bottom);
+                    uLeft = Math.min(uLeft, r.left);
+                    uRight = Math.max(uRight, r.right);
+                };
+                for (let ln = startLineNum; ln <= endLineNum; ln++) {
+                    const pos = cm.state.doc.line(ln).from;
+                    const domNode = cm.domAtPos(pos).node;
+                    const host = (domNode.nodeType === Node.TEXT_NODE ? domNode.parentElement : domNode as HTMLElement);
+                    const lineEl = host?.closest('.cm-line') as HTMLElement | null;
+                    if (!lineEl) continue;
+
+                    if (fullRow) {
+                        absorb(lineEl.getBoundingClientRect());
+                        continue;
+                    }
+                    const range = lineEl.ownerDocument.createRange();
+                    range.selectNodeContents(lineEl);
+                    const rects = range.getClientRects();
+                    if (rects.length === 0) {
+                        absorb(lineEl.getBoundingClientRect());
+                    } else {
+                        for (let i = 0; i < rects.length; i++) absorb(rects[i]);
+                    }
+                }
+
+                if (Number.isFinite(uTop) && uRight > uLeft) {
+                    const padX = 6;
+                    const padY = 1;
+                    glow.style.top = `${uTop - scrollerRect.top + scroller.scrollTop - padY}px`;
+                    glow.style.height = `${(uBottom - uTop) + padY * 2}px`;
+                    glow.style.left = `${uLeft - scrollerRect.left + scroller.scrollLeft - padX}px`;
+                    glow.style.width = `${(uRight - uLeft) + padX * 2}px`;
+                    glow.style.right = 'auto';
+                } else {
+                    // Fallback to coord-based vertical extent; CSS keeps it
+                    // full-width (left:0/right:0).
+                    const top = fromCoords.top - scrollerRect.top + scroller.scrollTop;
+                    glow.style.top = `${top}px`;
+                    glow.style.height = `${toCoords ? Math.max(22, toCoords.bottom - fromCoords.top + 2) : 22}px`;
+                }
+
+                scroller.appendChild(glow);
+                window.setTimeout(() => glow.remove(), 1800);
+            } catch (err) {
+                // Best-effort — a glow never matters enough to throw.
+                console.warn('Scene note glow failed:', err);
+            }
+        });
+    }
 }

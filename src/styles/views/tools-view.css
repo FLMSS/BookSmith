@@ -167,26 +167,23 @@
     color: #2f6ea8;
 }
 
+/*
+ * Navigator + Scene Notes share these classes. Restyled to match the
+ * Statistics view + left-pane explorer: neutral theme surfaces, no hardcoded
+ * brand colour, 6px radii, square action buttons, a clean bordered section
+ * title (replacing the old coloured pill), and light borderless file rows.
+ */
 .book-smith-navigator-view {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-}
-
-.book-smith-navigator-header {
-    display: flex;
-    align-items: center;
     gap: 10px;
 }
 
-.book-smith-navigator-back-btn,
-.book-smith-navigator-refresh-btn,
-.book-smith-navigator-change-folder-btn,
-.book-smith-navigator-select-btn {
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    background: var(--background-secondary);
-    cursor: pointer;
+/* Header row — back button (left) + square action buttons (right). */
+.book-smith-navigator-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .book-smith-navigator-back-btn {
@@ -194,35 +191,62 @@
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.book-smith-navigator-back-btn:hover {
+    background: var(--background-modifier-hover);
 }
 
+/* Square 28×28 action buttons (refresh, etc.) — Statistics style. */
 .book-smith-navigator-refresh-btn {
     margin-left: auto;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.book-smith-navigator-refresh-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
 }
 
+/* Clean section title — neutral, with a hairline separator under it. */
 .book-smith-navigator-title-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: #2f6ea8;
-    background: color-mix(in srgb, #2f6ea8 16%, var(--background-secondary));
-    border: 1px solid color-mix(in srgb, #2f6ea8 35%, var(--background-modifier-border));
-    border-radius: 10px;
-    padding: 8px 10px;
+    gap: 7px;
+    padding: 0 0 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    background: none;
+    border-radius: 0;
 }
 
 .book-smith-navigator-title-icon {
     display: inline-flex;
     align-items: center;
+    color: var(--text-muted);
+}
+.book-smith-navigator-title-icon svg {
+    width: 16px;
+    height: 16px;
 }
 
 .book-smith-navigator-title {
-    font-weight: 700;
+    font-weight: 600;
+    font-size: 1.02rem;
 }
 
 .book-smith-navigator-project-label,
@@ -248,13 +272,24 @@
 
 .book-smith-navigator-change-folder-btn,
 .book-smith-navigator-select-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
     padding: 5px 10px;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.book-smith-navigator-change-folder-btn:hover,
+.book-smith-navigator-select-btn:hover {
+    background: var(--background-modifier-hover);
 }
 
+/* File list — light borderless rows echoing the left-pane file explorer. */
 .book-smith-navigator-file-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
 }
 
 .book-smith-navigator-file-row {
@@ -262,14 +297,15 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    padding: 7px 9px;
-    background: var(--background-secondary);
+    border-radius: 6px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    background: transparent;
     cursor: pointer;
     text-align: left;
     text-decoration: none;
     color: var(--text-normal);
+    transition: background-color 0.1s ease;
 }
 
 .book-smith-navigator-file-row.internal-link,
@@ -280,14 +316,17 @@
 }
 
 .book-smith-navigator-file-row:hover {
-    border-color: #2f6ea8;
-    background: color-mix(in srgb, #2f6ea8 11%, var(--background-secondary));
+    background: var(--background-modifier-hover);
 }
 
 .book-smith-navigator-file-icon {
     display: inline-flex;
     align-items: center;
-    color: #2f6ea8;
+    color: var(--text-muted);
+}
+.book-smith-navigator-file-icon svg {
+    width: 16px;
+    height: 16px;
 }
 
 .book-smith-navigator-file-name {
@@ -301,10 +340,11 @@
     margin: 0;
 }
 
+/* Setup prompt — neutral dashed card. */
 .book-smith-navigator-setup {
-    border: 1px dashed color-mix(in srgb, #2f6ea8 45%, var(--background-modifier-border));
-    background: color-mix(in srgb, #2f6ea8 8%, var(--background-secondary));
-    border-radius: 10px;
+    border: 1px dashed var(--background-modifier-border);
+    background: var(--background-secondary);
+    border-radius: 8px;
     padding: 10px;
     display: flex;
     flex-direction: column;

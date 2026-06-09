@@ -59,22 +59,56 @@
     overflow: visible;
 }
 
+/*
+ * PROSE vertical fix. The gutter is positioned absolutely against its nearest
+ * positioned ancestor. Anchoring to `.cm-sizer` works for fountain, but in
+ * prose `.cm-sizer` also contains the inline title ABOVE the text, so `top: 0`
+ * lands above the first line and every flag is pushed up by the title's
+ * height. `.cm-contentContainer` starts exactly at the first text line, so
+ * anchoring there aligns the markers. Scoped away from `.fountain` so the
+ * screenplay layout keeps its existing `.cm-sizer` anchor untouched.
+ */
+.markdown-source-view:not(.fountain) .cm-contentContainer:has(.book-smith-scene-notes-gutter) {
+    position: relative;
+    overflow: visible;
+}
+
+/*
+ * The gutter is pulled out of flow (absolute, anchored to .cm-sizer) and
+ * placed just past the right edge of the text column. Two layouts need
+ * different anchors:
+ *
+ *  - PROSE (default): Obsidian's readable-line-width centres `.cm-content`
+ *    inside a full-width `.cm-sizer`, so the text column's right edge is at
+ *    `100% - (100% - var(--file-line-width)) / 2`. We anchor with `right` to
+ *    sit a few ch past that edge. (The old `left: 100%` rule planted the flag
+ *    at the FULL sizer/editor edge — far out in the prose margin — which is
+ *    the bug this fixes.)
+ *
+ *  - FOUNTAIN (`.fountain` cssclass, below): the monospace screenplay fills
+ *    the whole sizer width with its text column, so its right edge is just
+ *    `100%`. Kept EXACTLY as before via the override rule.
+ */
 .cm-gutters:has(.book-smith-scene-notes-gutter) {
     position: absolute !important;
-    /* CM6 sets `left: 0` on .cm-gutters by default; with width:22px that
-       wins over `right` and pins the gutter to the LEFT. Cancel left and
-       use `left: 100%` to plant the gutter's left edge at .cm-sizer's
-       right edge — flags end up just past the text column, in the margin. */
-    /* `ch` is the width of "0" in the current font — exact in monospace.
-       +3ch = three Courier characters of breathing room past the text column. */
-    left: calc(100% + 3ch) !important;
-    right: auto !important;
+    /* CM6 defaults `.cm-gutters` to `left: 0`; cancel it so `right` wins. */
+    left: auto !important;
+    /* Right edge of the centred prose column + ~3ch breathing room. Floored
+       so it never slides off-screen when the pane is narrower than the
+       readable width. */
+    right: max(4px, calc((100% - var(--file-line-width, 700px)) / 2 - 22px - 3ch)) !important;
     top: 0;
     bottom: 0;
     width: 22px;
     z-index: 5;
     background: transparent;
     border: none;
+}
+
+/* Fountain: text column == full sizer width, so anchor at 100% as before. */
+.fountain .cm-gutters:has(.book-smith-scene-notes-gutter) {
+    left: calc(100% + 3ch) !important;
+    right: auto !important;
 }
 .book-smith-scene-note-marker {
     display: flex;
@@ -99,6 +133,18 @@
     transform: translateY(-2.5px) scale(1.15);
 }
 
+/*
+ * Prose has a taller line-height than the monospace fountain layout, so the
+ * top-aligned marker (with the fountain optical -2.5px nudge) reads a little
+ * high against the text. Nudge prose flags down to sit on the line.
+ */
+.markdown-source-view:not(.fountain) .book-smith-scene-note-marker {
+    transform: translateY(4px);
+}
+.markdown-source-view:not(.fountain) .book-smith-scene-note-marker:hover {
+    transform: translateY(4px) scale(1.15);
+}
+
 /* Flash highlight when jumping to a note */
 .book-smith-scene-note-flash {
     position: absolute;
@@ -115,6 +161,58 @@
     100% { opacity: 0; }
 }
 
+/*
+ * Purple "where is it" glow — applied to a note's paragraph in the editor
+ * when its panel row is clicked (only if the paragraph is already on screen;
+ * never scrolls). Softer and a touch longer than the jump-flash, with an
+ * outer bloom so it reads as a gentle highlight rather than a hard block.
+ */
+.book-smith-scene-note-glow {
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: color-mix(in srgb, var(--glow-color, #7c59f0) 12%, transparent);
+    border-radius: 8px;
+    pointer-events: none;
+    transform-origin: center;
+    will-change: transform, opacity, box-shadow;
+    /* Soften the horizontal edges so the highlight melts into the page rather
+       than cutting off as a hard block. A small FIXED-px fade (not a %) so it
+       only feathers the ~6px padding around the text — never eats the text
+       itself, regardless of how wide the paragraph is. */
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 5px, #000 calc(100% - 5px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 5px, #000 calc(100% - 5px), transparent 100%);
+    /* "Breathing" highlight: swells up with a soft overshoot, settles with a
+       little weight, then exhales. easeOutQuint entrance, long gentle tail. */
+    animation: book-smith-scene-note-glow 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes book-smith-scene-note-glow {
+    /* Scale only ever GROWS — never reverses — so there's no shrink-stop-shrink
+       hitch. It forms up (thin → full with a soft puff), LINGERS at full
+       presence to breathe, then keeps expanding ever so slightly as it exhales
+       and fades, like a bubble dissipating. The bloom swells then dissolves. */
+    0% {
+        opacity: 0;
+        transform: scale(0.99, 0.82);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--glow-color, #7c59f0) 0%, transparent);
+    }
+    24% {
+        opacity: 1;
+        transform: scale(1, 1.03);
+        box-shadow: 0 0 16px 3px color-mix(in srgb, var(--glow-color, #7c59f0) 20%, transparent);
+    }
+    52% {
+        opacity: 1;
+        transform: scale(1, 1.045);
+        box-shadow: 0 0 13px 2px color-mix(in srgb, var(--glow-color, #7c59f0) 16%, transparent);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1, 1.08);
+        box-shadow: 0 0 24px 6px color-mix(in srgb, var(--glow-color, #7c59f0) 0%, transparent);
+    }
+}
+
 /* Title row layout: left group + compact button on the right */
 .book-smith-scene-notes-title-left {
     display: flex;
@@ -123,21 +221,31 @@
     flex: 1 1 auto;
     min-width: 0;
 }
+/* Square action button matching the navigator refresh / stats action style. */
 .book-smith-scene-notes-compact-btn {
     flex: 0 0 auto;
-    background: transparent;
-    border: none;
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
     color: var(--text-muted);
     cursor: pointer;
-    padding: 3px 4px;
-    border-radius: 4px;
-    display: flex;
+    border-radius: 6px;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
-.book-smith-scene-notes-compact-btn:hover,
-.book-smith-scene-notes-compact-btn.is-active {
+.book-smith-scene-notes-compact-btn:hover {
     color: var(--text-normal);
     background-color: var(--background-modifier-hover);
+}
+.book-smith-scene-notes-compact-btn.is-active {
+    color: var(--text-normal);
+    border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent) inset;
 }
 
 /* Compact mode — tighter rows, no meta line, no file group titles */

@@ -1758,11 +1758,12 @@ export class ToolView extends ItemView {
         this.sceneNotesViewEl = view;
         if (this.sceneNotesCompact) view.addClass('is-compact');
 
-        // Header with "back" — matches navigator header styling to stay consistent.
+        // Header: back button + compact toggle on the right. No title row —
+        // the pane needs every bit of vertical space for notes.
         const header = view.createDiv({ cls: 'book-smith-navigator-header' });
         const backButton = header.createEl('button', { cls: 'book-smith-navigator-back-btn' });
         setIcon(backButton, 'arrow-left');
-        backButton.appendChild(createSpan({ text: ' Back to toolbox' }));
+        backButton.appendChild(createSpan({ text: ' Back to Toolbox' }));
         backButton.addEventListener('click', () => {
             if (!this.normalView) return;
             this.teardownSceneNotes();
@@ -1770,14 +1771,8 @@ export class ToolView extends ItemView {
             this.createNormalView(this.normalView);
         });
 
-        const titleRow = view.createDiv({ cls: 'book-smith-navigator-title-row' });
-        const titleLeft = titleRow.createDiv({ cls: 'book-smith-scene-notes-title-left' });
-        const titleIcon = titleLeft.createSpan({ cls: 'book-smith-navigator-title-icon' });
-        setIcon(titleIcon, 'flag');
-        titleLeft.createSpan({ cls: 'book-smith-navigator-title', text: 'Scene Notes' });
-
-        // Compact toggle — top-right of title row.
-        const compactBtn = titleRow.createEl('button', {
+        // Compact toggle — square action button at the far right of the header.
+        const compactBtn = header.createEl('button', {
             cls: 'book-smith-scene-notes-compact-btn',
             attr: { 'aria-label': 'Toggle compact view', title: 'Toggle compact view' }
         });
@@ -2093,7 +2088,10 @@ export class ToolView extends ItemView {
 
             // First press selects — idempotent if already selected, so the
             // second press of a double-click just re-selects with no ill effect.
-            this.selectSceneNote(noteId);
+            // `true` → glow the paragraph in the editor: this is a panel click,
+            // so the cue helps locate the scene. (Selections originating from
+            // the editor gutter flag pass false — you're already there.)
+            this.selectSceneNote(noteId, true);
 
             // Second press on the SAME note within 500ms → navigate the
             // main editor to that scene.
@@ -2104,8 +2102,16 @@ export class ToolView extends ItemView {
         });
     }
 
-    private selectSceneNote(noteId: string): void {
+    private selectSceneNote(noteId: string, triggerGlow = false): void {
         this.sceneNotesEditorNoteId = noteId;
+        // Preserve the note list's scroll position across this selection — the
+        // editor below repopulates and the textarea autofocuses, either of
+        // which can otherwise nudge the list. Restore on the next frame.
+        const listEl = this.sceneNotesContainer;
+        const prevScroll = listEl?.scrollTop ?? 0;
+        if (listEl) {
+            requestAnimationFrame(() => { listEl.scrollTop = prevScroll; });
+        }
         // Update active highlight directly in the DOM — no full re-render so there's no blink.
         if (this.sceneNotesContainer) {
             this.sceneNotesContainer.querySelectorAll<HTMLElement>('.book-smith-scene-notes-row').forEach(el => {
@@ -2124,6 +2130,15 @@ export class ToolView extends ItemView {
             return;
         }
         const note = located.note;
+
+        // Subtle cue: glow the note's paragraph in any editor where it's
+        // currently visible (no scrolling). Only when the selection came from
+        // a panel click — clicking the editor's own gutter flag shouldn't
+        // glow (you're already looking right at it). No-op if the setting is
+        // off or the paragraph isn't on screen.
+        if (triggerGlow) {
+            this.plugin.glowSceneNoteInEditor(note);
+        }
 
         const headerRow = editor.createDiv({ cls: 'book-smith-scene-notes-editor-header' });
 
@@ -2470,8 +2485,11 @@ export class ToolView extends ItemView {
             await this.plugin.sceneNotesManager.updateNote(note.id, { content: textarea.value });
         });
 
-        // Auto-focus the textarea when the editor opens so Ctrl+J flow is seamless.
-        window.setTimeout(() => textarea.focus(), 0);
+        // Auto-focus the textarea when the editor opens so Ctrl+J flow is
+        // seamless. `preventScroll` stops the browser from scrolling an
+        // ancestor (the note list) to bring the textarea into view, which
+        // otherwise jumps the list back to the top.
+        window.setTimeout(() => textarea.focus({ preventScroll: true }), 0);
     }
 
     private teardownSceneNotes(): void {
