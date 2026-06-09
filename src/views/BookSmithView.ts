@@ -115,8 +115,17 @@ export class BookSmithView extends ItemView {
             this.app.vault.on('rename', async (file: TAbstractFile, oldPath: string) => {
                 this.isRenamingFile = true;
                 if ((file instanceof TFile || file instanceof TFolder) && this.currentBook) {
+                    // In-place rename updates the matching node's path/title
+                    // (preserving its metadata). Add/remove from moves is
+                    // handled at render time by ChapterTree's disk
+                    // reconciliation, so we just refresh when the book is
+                    // touched on either side.
                     const updatedBook = await this.fileEventManager.handleBookModify(file, this.currentBook, oldPath);
-                    if (updatedBook) {
+                    const bookPath = `${this.plugin.settings.defaultBookPath}/${this.currentBook.basic.title}`;
+                    const touchedBook = updatedBook
+                        || oldPath.startsWith(bookPath + '/')
+                        || file.path.startsWith(bookPath + '/');
+                    if (touchedBook) {
                         await this.refreshView();
                     }
                 }
@@ -128,9 +137,12 @@ export class BookSmithView extends ItemView {
         this.registerEvent(
             this.app.vault.on('create', async (file: TAbstractFile) => {
                 if (!this.currentBook) return;
+                if (!(file instanceof TFile || file instanceof TFolder)) return;
                 const bookPath = `${this.plugin.settings.defaultBookPath}/${this.currentBook.basic.title}`;
                 if (!file.path.startsWith(bookPath) || file.path.endsWith('book-config.json')) return;
 
+                // New entries appear in the pane via ChapterTree's render-time
+                // disk reconciliation — just refresh (and update stats).
                 await this.plugin.statsManager.updateStatsForFile();
                 await this.refreshView();
             })
@@ -140,9 +152,12 @@ export class BookSmithView extends ItemView {
         this.registerEvent(
             this.app.vault.on('delete', async (file: TAbstractFile) => {
                 if (!this.currentBook) return;
+                if (!(file instanceof TFile || file instanceof TFolder)) return;
                 const bookPath = `${this.plugin.settings.defaultBookPath}/${this.currentBook.basic.title}`;
                 if (!file.path.startsWith(bookPath) || file.path.endsWith('book-config.json')) return;
 
+                // Deleted entries drop out of the pane via ChapterTree's
+                // render-time disk reconciliation — just refresh (and stats).
                 await this.plugin.statsManager.updateStatsForFile();
                 await this.refreshView();
             })
