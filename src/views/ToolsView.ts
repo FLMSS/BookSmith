@@ -1708,6 +1708,14 @@ export class ToolView extends ItemView {
     private sceneNotesLastClickTime = 0;
     private sceneNotesLastClickId = '';
 
+    /**
+     * User-chosen textarea height for the Scene Notes editor, set by dragging
+     * the resize handle between the list and the editor. Persists for the
+     * lifetime of the view (reset on teardown) so switching notes preserves
+     * the size the user picked.
+     */
+    private sceneNotesTextareaHeight: number | null = null;
+
     public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
         if (!this.normalView) return;
         this.isNavigatorMode = false;
@@ -1792,6 +1800,15 @@ export class ToolView extends ItemView {
         // detection. Timestamp-based detection below is immune to that.
         this.attachSceneNotesClickDelegate(listWrapper);
         this.renderSceneNotesList(listWrapper);
+
+        // Resize handle — drag up/down to grow/shrink the editor textarea.
+        // Sits between the list and the editor; CSS hides it when no note is
+        // selected (the editor itself is display:none in that state).
+        const resizeHandle = view.createDiv({ cls: 'book-smith-scene-notes-resize-handle' });
+        resizeHandle.setAttribute('role', 'separator');
+        resizeHandle.setAttribute('aria-orientation', 'horizontal');
+        resizeHandle.setAttribute('aria-label', 'Resize note editor');
+        this.attachSceneNotesResizeHandle(resizeHandle, view);
 
         // Editor section — only populated when a note is selected.
         view.createDiv({ cls: 'book-smith-scene-notes-editor', attr: { 'data-empty': 'true' } });
@@ -1999,6 +2016,51 @@ export class ToolView extends ItemView {
     }
 
     /**
+     * Wire up vertical drag on the resize handle between the list and the
+     * editor. Drag up → textarea grows (list shrinks); drag down → textarea
+     * shrinks (list grows). The chosen height is persisted in
+     * `sceneNotesTextareaHeight` so switching notes keeps the size.
+     *
+     * Bounds: textarea can't shrink below the CSS `min-height: 120px`, and
+     * can't grow past 75% of the view's height (so the list never disappears
+     * entirely). Mousemove/up are attached lazily on mousedown and removed
+     * on release, so no persistent global listeners.
+     */
+    private attachSceneNotesResizeHandle(handle: HTMLElement, view: HTMLElement): void {
+        handle.addEventListener('mousedown', (e) => {
+            const textareaEl = view.querySelector<HTMLTextAreaElement>('.book-smith-scene-notes-editor-textarea');
+            const editorEl = view.querySelector<HTMLElement>('.book-smith-scene-notes-editor');
+            if (!textareaEl || !editorEl) return;
+            if (editorEl.getAttribute('data-empty') === 'true') return;
+
+            e.preventDefault();
+            const startY = e.clientY;
+            const startHeight = textareaEl.offsetHeight;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            handle.addClass('is-dragging');
+
+            const onMove = (ev: MouseEvent) => {
+                const delta = startY - ev.clientY; // drag UP → positive → grow
+                const viewHeight = view.getBoundingClientRect().height;
+                const maxHeight = Math.max(120, viewHeight * 0.75);
+                const newHeight = Math.max(60, Math.min(maxHeight, startHeight + delta));
+                textareaEl.style.height = `${newHeight}px`;
+                this.sceneNotesTextareaHeight = newHeight;
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                handle.removeClass('is-dragging');
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+    }
+
+    /**
      * Install a single mousedown delegate on the list container. We use
      * `mousedown` rather than `click` because:
      *   - `click` requires mousedown+mouseup to land on the SAME DOM node.
@@ -2165,11 +2227,230 @@ export class ToolView extends ItemView {
 
         editor.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
 
-        const textarea = editor.createEl('textarea', {
+        // The textarea is rendered with transparent text — the *visible* text
+        // comes from the `mirror` div sitting in front of it (pointer-events
+        // none, so clicks/keys still hit the textarea). The mirror renders the
+        // same content with `<mark class="book-smith-tag-hl">` for `#tags` and
+        // `<span class="book-smith-wikilink-hl">[[file]]</span>` for wikilinks,
+        // both styled in purple. Identical font/padding/wrap rules between the
+        // two layers keep the cursor and selection aligned with what the user
+        // sees.
+        const textareaWrap = editor.createDiv({ cls: 'book-smith-scene-notes-textarea-wrap' });
+        const textarea = textareaWrap.createEl('textarea', {
             cls: 'book-smith-scene-notes-editor-textarea',
-            attr: { placeholder: 'Write your note…' }
+            attr: { placeholder: 'Write your note…', spellcheck: 'true' }
         }) as HTMLTextAreaElement;
         textarea.value = note.content || '';
+        // Apply any user-chosen height from the divider drag so switching notes
+        // preserves the size; otherwise the CSS min-height (120px) defaults in.
+        if (this.sceneNotesTextareaHeight !== null) {
+            textarea.style.height = `${this.sceneNotesTextareaHeight}px`;
+        }
+        const mirror = textareaWrap.createDiv({
+            cls: 'book-smith-scene-notes-textarea-mirror',
+            attr: { 'aria-hidden': 'true' }
+        });
+
+        const escapeHtml = (s: string) =>
+            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        const renderMirror = () => {
+            const text = textarea.value;
+            // Process wikilinks first; then tags. We do them on the already-
+            // escaped text and only insert HTML for matched spans, so the rest
+            // remains plain text. Tag regex uses a leading-boundary capture to
+            // avoid matching inside words (so `c#` in "C#" wouldn't match).
+            let html = escapeHtml(text);
+            html = html.replace(
+                /\[\[([^\]\r\n]+?)\]\]/g,
+                (_m, inner) => `<span class="book-smith-wikilink-hl">[[${inner}]]</span>`
+            );
+            html = html.replace(
+                /(^|[\s(])(#[\w/\-]+)/g,
+                (_m, lead, tag) => `${lead}<mark class="book-smith-tag-hl">${tag}</mark>`
+            );
+            // Trailing newline keeps the mirror's last-line height in sync
+            // with the textarea when the content ends in a newline.
+            mirror.innerHTML = html + '\n';
+        };
+        renderMirror();
+
+        textarea.addEventListener('input', () => {
+            renderMirror();
+            renderLinkSuggest();
+        });
+        textarea.addEventListener('scroll', () => {
+            mirror.scrollTop = textarea.scrollTop;
+            mirror.scrollLeft = textarea.scrollLeft;
+        });
+
+        // --- Wikilink autocomplete popup ---
+        //
+        // Triggered while the cursor sits inside an unclosed `[[…` on a single
+        // line. Filters vault markdown files by basename/path against the
+        // partial query and lets the user commit with Enter / Tab / click.
+
+        const suggestPopup = textareaWrap.createDiv({
+            cls: 'book-smith-scene-notes-link-suggest'
+        });
+        suggestPopup.style.display = 'none';
+
+        let suggestItems: TFile[] = [];
+        let suggestActiveIndex = 0;
+
+        const closeSuggest = () => {
+            suggestPopup.style.display = 'none';
+            suggestPopup.empty();
+            suggestItems = [];
+            suggestActiveIndex = 0;
+        };
+
+        /** If the caret sits inside `[[…` with no closing `]]` on the same line,
+         *  return the position right after `[[` and the query so far. */
+        const findOpenLinkContext = (): { start: number; query: string } | null => {
+            if (textarea.selectionStart !== textarea.selectionEnd) return null;
+            const cursor = textarea.selectionStart;
+            const value = textarea.value;
+            const lastOpen = value.lastIndexOf('[[', cursor);
+            if (lastOpen < 0) return null;
+            const between = value.slice(lastOpen + 2, cursor);
+            if (between.includes(']]') || between.includes('\n')) return null;
+            return { start: lastOpen + 2, query: between };
+        };
+
+        const renderLinkSuggest = () => {
+            const ctx = findOpenLinkContext();
+            if (!ctx) { closeSuggest(); return; }
+
+            const all = this.app.vault.getMarkdownFiles();
+            const q = ctx.query.toLowerCase();
+            const matches = (q
+                ? all.filter(f =>
+                    f.basename.toLowerCase().includes(q) ||
+                    f.path.toLowerCase().includes(q))
+                : all
+            ).slice(0, 10);
+
+            if (matches.length === 0) { closeSuggest(); return; }
+
+            suggestItems = matches;
+            if (suggestActiveIndex >= matches.length) suggestActiveIndex = 0;
+
+            suggestPopup.empty();
+            suggestPopup.style.display = '';
+            matches.forEach((file, i) => {
+                const item = suggestPopup.createDiv({
+                    cls: 'book-smith-scene-notes-link-suggest-item'
+                        + (i === suggestActiveIndex ? ' is-active' : '')
+                });
+                item.createSpan({
+                    cls: 'book-smith-scene-notes-link-suggest-name',
+                    text: file.basename
+                });
+                const parentPath = file.parent?.path && file.parent.path !== '/' ? file.parent.path : '';
+                if (parentPath) {
+                    item.createSpan({
+                        cls: 'book-smith-scene-notes-link-suggest-path',
+                        text: parentPath
+                    });
+                }
+                // mousedown (not click) so the textarea doesn't blur first.
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    commitLinkSuggest(i);
+                });
+            });
+        };
+
+        const commitLinkSuggest = (idx: number) => {
+            const ctx = findOpenLinkContext();
+            if (!ctx) { closeSuggest(); return; }
+            const file = suggestItems[idx];
+            if (!file) { closeSuggest(); return; }
+
+            const value = textarea.value;
+            const cursor = textarea.selectionStart;
+            const before = value.slice(0, ctx.start);
+            const after = value.slice(cursor);
+            // Append `]]` only if the user hasn't typed it themselves.
+            const postfix = after.startsWith(']]') ? '' : ']]';
+            const inserted = file.basename;
+            const newValue = before + inserted + postfix + after;
+            const newCursor = before.length + inserted.length + postfix.length;
+            textarea.value = newValue;
+            textarea.setSelectionRange(newCursor, newCursor);
+            // Trigger save + mirror refresh.
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            closeSuggest();
+        };
+
+        textarea.addEventListener('keydown', (e) => {
+            if (suggestPopup.style.display === 'none') return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                suggestActiveIndex = (suggestActiveIndex + 1) % suggestItems.length;
+                renderLinkSuggest();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                suggestActiveIndex = (suggestActiveIndex - 1 + suggestItems.length) % suggestItems.length;
+                renderLinkSuggest();
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                commitLinkSuggest(suggestActiveIndex);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSuggest();
+            }
+        });
+        /** If `pos` falls inside a `[[…]]` token, return the inner text. */
+        const findWikilinkAt = (text: string, pos: number): string | null => {
+            const re = /\[\[([^\]\r\n]+?)\]\]/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(text)) !== null) {
+                const start = m.index;
+                const end = m.index + m[0].length;
+                if (pos >= start && pos <= end) return m[1];
+            }
+            return null;
+        };
+
+        // Ctrl/Cmd+click on a [[wikilink]] opens the linked file — same
+        // chord Obsidian's edit mode uses. Plain clicks still position the
+        // cursor for editing. Click handler runs after the browser's
+        // mousedown moves the caret, so `selectionStart` is the click target.
+        textarea.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                const cursor = textarea.selectionStart;
+                const linkText = findWikilinkAt(textarea.value, cursor);
+                if (linkText) {
+                    e.preventDefault();
+                    // Strip pipe alias (Obsidian's openLinkText takes just
+                    // file[#section], not the alias half).
+                    const target = linkText.split('|')[0].trim();
+                    if (target) {
+                        // Open in a new pane on middle-button-equivalent
+                        // (Cmd+Shift+click). Otherwise reuse the active leaf.
+                        const newLeaf = e.shiftKey;
+                        this.app.workspace.openLinkText(target, note.filePath, newLeaf);
+                    }
+                    return;
+                }
+            }
+            renderLinkSuggest();
+        });
+        textarea.addEventListener('keyup', (e) => {
+            // Caret-moving keys; refresh suggestions for the new context.
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                || e.key === 'Home' || e.key === 'End') {
+                renderLinkSuggest();
+            }
+        });
+        textarea.addEventListener('blur', () => {
+            // Defer so a popup mousedown can fire its handler before we hide.
+            window.setTimeout(() => {
+                if (document.activeElement !== textarea) closeSuggest();
+            }, 100);
+        });
 
         const scheduleSave = () => {
             if (this.sceneNotesAutosaveTimer !== null) {
@@ -2213,6 +2494,7 @@ export class ToolView extends ItemView {
         this.sceneNotesContainer = null;
         this.sceneNotesViewEl = null;
         this.sceneNotesEditorNoteId = null;
+        this.sceneNotesTextareaHeight = null;
     }
 
     // Override onClose to ensure all views are properly closed

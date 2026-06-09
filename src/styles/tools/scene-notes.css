@@ -158,17 +158,36 @@
     padding-top: 0;
 }
 
-/* Scene Notes view in the right pane */
+/*
+ * Scene Notes view in the right pane.
+ *
+ * Layout: full-height flex column. Header + title row at the top (natural
+ * height), the note list takes the available middle space and scrolls
+ * internally, and the editor section is pinned at the bottom — always
+ * visible no matter how long the list gets. The editor itself caps at ~55%
+ * of the pane and scrolls internally if a note's contents are long, so the
+ * list can't be squeezed to nothing.
+ *
+ * `min-height: 0` on the flex container and the list wrapper is required:
+ * without it, flex children refuse to shrink below their content height
+ * and the list happily overflows the pane instead of scrolling.
+ */
 .book-smith-scene-notes-view {
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 0 4px 12px;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
 }
 .book-smith-scene-notes-list-wrapper {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
 }
 .book-smith-scene-notes-group-title {
     font-size: 0.8em;
@@ -237,12 +256,50 @@
 
 /* Editor section */
 .book-smith-scene-notes-editor {
-    margin-top: 12px;
-    border-top: 1px solid var(--background-modifier-border);
-    padding-top: 10px;
+    padding-top: 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    /* Stay pinned at the bottom of the pane regardless of list length. The
+       resize handle (sibling above this element) owns the dividing line. */
+    flex: 0 0 auto;
+    max-height: 75%;
+    overflow-y: auto;
+}
+
+/*
+ * Resize handle between the list and the editor — drag vertically to grow
+ * or shrink the note textarea. The visible "line" is a centered pseudo-
+ * element so the entire 10px-tall strip is grabbable, not just the pixel-
+ * thin border. The :has() rule hides the handle whenever no note is
+ * selected (the editor below is `display:none` in that state).
+ */
+.book-smith-scene-notes-resize-handle {
+    flex: 0 0 auto;
+    height: 10px;
+    margin: 4px 0 2px;
+    position: relative;
+    cursor: row-resize;
+    user-select: none;
+}
+.book-smith-scene-notes-resize-handle::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 4px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--background-modifier-border);
+    transition: background-color 120ms ease;
+}
+.book-smith-scene-notes-resize-handle:hover::before,
+.book-smith-scene-notes-resize-handle.is-dragging::before {
+    background: var(--interactive-accent);
+}
+.book-smith-scene-notes-view:has(.book-smith-scene-notes-editor[data-empty="true"])
+    .book-smith-scene-notes-resize-handle {
+    display: none;
 }
 .book-smith-scene-notes-editor[data-empty="true"] {
     display: none;
@@ -370,4 +427,108 @@
 .book-smith-scene-notes-editor-textarea:focus {
     outline: none;
     border-color: var(--interactive-accent);
+}
+
+/*
+ * Note textarea with inline #tag + [[wikilink]] highlighting.
+ *
+ * Layering: the textarea has transparent text (caret + selection still
+ * visible), and a `mirror` div in front of it (pointer-events: none) renders
+ * the visible text with <mark class="book-smith-tag-hl"> for #tags and
+ * <span class="book-smith-wikilink-hl"> for [[wikilinks]] — both styled in
+ * accent-purple to match Obsidian's native look. Identical font/padding/
+ * wrap rules between the two layers keep cursor positioning aligned with
+ * what the user sees.
+ *
+ * Box-sizing, font-family, font-size, line-height, padding, border width,
+ * and white-space MUST match between .textarea-wrap > .mirror and
+ * .editor-textarea — any mismatch causes drift between caret and rendered text.
+ */
+.book-smith-scene-notes-textarea-wrap {
+    position: relative;
+    width: 100%;
+}
+.book-smith-scene-notes-textarea-wrap > .book-smith-scene-notes-editor-textarea {
+    position: relative;
+    z-index: 1;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text-normal);
+}
+.book-smith-scene-notes-textarea-wrap > .book-smith-scene-notes-editor-textarea::placeholder {
+    /* `::placeholder` overrides the transparent `color` set above. */
+    color: var(--text-faint);
+    opacity: 1;
+}
+.book-smith-scene-notes-textarea-wrap > .book-smith-scene-notes-editor-textarea::selection {
+    background: var(--text-selection);
+    color: var(--text-normal);
+}
+.book-smith-scene-notes-textarea-mirror {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    box-sizing: border-box;
+    /* Match textarea geometry. */
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    /* Match textarea typography. */
+    font-family: var(--font-interface);
+    font-size: 0.9em;
+    line-height: 1.4;
+    /* Match textarea wrapping. */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    color: var(--text-normal);
+    background: transparent;
+    z-index: 2;
+}
+.book-smith-tag-hl {
+    background: var(--tag-background, rgba(124, 89, 240, 0.18));
+    color: var(--tag-color, #7c59f0);
+    border-radius: 4px;
+    padding: 0;
+}
+.book-smith-wikilink-hl {
+    color: #7c59f0;
+}
+
+/* --- Wikilink autocomplete popup --- */
+.book-smith-scene-notes-link-suggest {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    z-index: 50;
+    font-size: 0.85em;
+}
+.book-smith-scene-notes-link-suggest-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 5px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.book-smith-scene-notes-link-suggest-item:hover,
+.book-smith-scene-notes-link-suggest-item.is-active {
+    background: var(--background-modifier-hover);
+}
+.book-smith-scene-notes-link-suggest-name {
+    color: var(--text-normal);
+    font-weight: 500;
+}
+.book-smith-scene-notes-link-suggest-path {
+    color: var(--text-muted);
+    font-size: 0.85em;
 }
