@@ -1,7 +1,7 @@
 {
   "name": "book-smith",
   "version": "1.0.0",
-  "description": "一个用于书籍写作管理的 Obsidian 插件",
+  "description": "An Obsidian plugin for long-form writing and book management (fork of yeban8090/book-smith)",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -13,7 +13,7 @@
     "book",
     "writing"
   ],
-  "author": "",
+  "author": "FelMNZ",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^16.11.6",
