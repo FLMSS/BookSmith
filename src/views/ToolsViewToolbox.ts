@@ -22,6 +22,9 @@ export class ToolsViewToolbox {
         const navigatorItem = this.createToolItem(actions, 'compass', i18n.t('NAVIGATOR'));
         navigatorItem.addEventListener('click', () => void this.view.enterNavigatorMode());
 
+        const sceneNotesItem = this.createToolItem(actions, 'flag', 'Scene Notes');
+        sceneNotesItem.addEventListener('click', () => void this.view.enterSceneNotesMode());
+
         const statsItem = this.createToolItem(actions, 'calendar-days', i18n.t('STATS'));
         statsItem.addEventListener('click', () => void this.view.enterStatisticsMode());
 

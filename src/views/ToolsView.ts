@@ -5,7 +5,9 @@ import { FocusToolView } from '../components/FocusToolView';
 import BookSmithPlugin from '../main';
 import { i18n } from '../i18n/i18n';
 import { BookSelectionModal } from '../modals/BookSelectionModal';
-import { Book } from '../types/book';
+import { Book, ChapterNode } from '../types/book';
+import { BookOwner } from '../services/SceneNotesManager';
+import { SceneNote } from '../types/sceneNote';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { ToolsViewStats } from './ToolsViewStats';
@@ -57,6 +59,7 @@ export class ToolView extends ItemView {
     public statsSourceMenuOpen = false;
     public statsYearEditing = false;
     public statsRefreshTimer: number | null = null;
+    private statsChangeUnsubscribe: (() => void) | null = null;
     public statsProgressMenuEl: HTMLElement | null = null;
     public statsProgressMenuOutsideHandler: ((e: MouseEvent) => void) | null = null;
     public statsRichTooltipEl: HTMLElement | null = null;
@@ -227,15 +230,21 @@ export class ToolView extends ItemView {
             this.scheduleStatsRefreshForPath(file.path);
             this.scheduleStatsRefreshForPath(oldPath);
         }));
-        this.registerEvent(this.app.vault.on('modify', (file) => {
-            this.scheduleStatsRefreshForPath(file.path);
-        }));
+        // Stats updates come from onStatsChange (fires after stats are persisted).
+        // Uses fast in-memory path — no disk reads.
+        if (!this.statsChangeUnsubscribe) {
+            this.statsChangeUnsubscribe = this.plugin.statsManager.onStatsChange(() => {
+                if (!this.isStatsViewVisible()) return;
+                this.refreshStatsFromMemory();
+                this.redrawStatisticsView();
+            });
+        }
 
         this.navigatorEventsBound = true;
     }
 
     private isStatsViewVisible(): boolean {
-        return Boolean(this.normalView?.querySelector('.book-smith-stats-view'));
+        return Boolean(this.normalView?.hasClass('book-smith-stats-view'));
     }
 
     private scheduleStatsRefreshForPath(path: string): void {
@@ -479,6 +488,58 @@ export class ToolView extends ItemView {
         this.statsDailyFocusMinutes = this.loadDailyFocusMinutesData();
     }
 
+    /**
+     * Fast in-memory stats refresh for the current book.
+     * Reads from statsManager's in-memory book object instead of disk.
+     */
+    private refreshStatsFromMemory(): void {
+        const currentBook = this.plugin.statsManager.getCurrentBook();
+        if (!currentBook) return;
+
+        // Update the in-memory book in statsBooks array
+        const idx = this.statsBooks.findIndex(b => b.basic.uuid === currentBook.basic.uuid);
+        if (idx >= 0) {
+            this.statsBooks[idx] = currentBook;
+        }
+
+        // Rebuild stats data for the view being shown
+        if (this.statsSourceBookId === 'global') {
+            // Re-merge all books (one is now updated in memory)
+            const mergedWords: Record<string, number> = {};
+            const mergedProgress: Record<string, DailyProgressEntry> = {};
+            this.statsBooks.forEach(book => {
+                const dailyProgress = this.getDailyProgressForBook(book);
+                Object.entries(dailyProgress).forEach(([date, entry]) => {
+                    const previous = mergedProgress[date] || {
+                        positive_change: 0, negative_change: 0, net_change: 0,
+                        words_added: 0, words_deleted: 0, iteration_deletions: 0, old_deletions: 0
+                    };
+                    mergedProgress[date] = {
+                        positive_change: previous.positive_change + entry.positive_change,
+                        negative_change: previous.negative_change + entry.negative_change,
+                        net_change: previous.net_change + entry.net_change,
+                        words_added: (previous.words_added || 0) + (entry.words_added || 0),
+                        words_deleted: (previous.words_deleted || 0) + (entry.words_deleted || 0),
+                        iteration_deletions: (previous.iteration_deletions || 0) + (entry.iteration_deletions || 0),
+                        old_deletions: (previous.old_deletions || 0) + (entry.old_deletions || 0)
+                    };
+                    mergedWords[date] = mergedProgress[date].net_change;
+                });
+            });
+            this.statsDailyWords = mergedWords;
+            this.statsDailyProgress = mergedProgress;
+        } else if (this.statsSourceBookId === currentBook.basic.uuid) {
+            const dailyProgress = this.getDailyProgressForBook(currentBook);
+            this.statsDailyWords = Object.fromEntries(
+                Object.entries(dailyProgress).map(([date, entry]) => [date, entry.net_change])
+            );
+            this.statsDailyProgress = dailyProgress;
+            this.statsDailyComments = { ...(currentBook.stats.daily_comments || {}) };
+        }
+
+        this.redrawStatisticsView();
+    }
+
     private loadDailyFocusMinutesData(): Record<string, number> {
         const minutesByDay: Record<string, number> = {};
 
@@ -509,7 +570,9 @@ export class ToolView extends ItemView {
                 negative_change: entry?.negative_change || 0,
                 net_change: entry?.net_change || 0,
                 words_added: entry?.words_added ?? entry?.positive_change ?? 0,
-                words_deleted: fallbackWordsDeleted
+                words_deleted: fallbackWordsDeleted,
+                iteration_deletions: entry?.iteration_deletions || 0,
+                old_deletions: entry?.old_deletions || 0
             };
         });
 
@@ -1311,11 +1374,14 @@ export class ToolView extends ItemView {
             };
         }
 
-        // New Material (Net) mode
-        const net = entry.net_change || 0;
+        // Both daily-output and new-material-net use the same formula:
+        // new_material = net_change + old_deletions
+        const netChange = entry.net_change || 0;
+        const oldDeletions = entry.old_deletions || 0;
+        const newMaterial = netChange + oldDeletions;
         return {
-            positive: Math.max(0, net),
-            negative: Math.min(0, net)
+            positive: newMaterial,
+            negative: -oldDeletions
         };
     }
 
@@ -1327,7 +1393,9 @@ export class ToolView extends ItemView {
             return currentMetric;
         }
         if (this.statsWritingDisplayMode === 'daily-output') {
-            return Math.max(0, progress.net_change || 0);
+            // new_material = net_change + old_deletions
+            const newMaterial = (progress.net_change || 0) + (progress.old_deletions || 0);
+            return Math.max(0, newMaterial);
         }
         if (this.statsWritingDisplayMode === 'raw') {
             return (progress.words_added ?? progress.positive_change ?? 0) - (progress.words_deleted ?? Math.abs(progress.negative_change || 0));
@@ -1610,8 +1678,850 @@ export class ToolView extends ItemView {
         return String(anchorDate.getFullYear());
     }
 
+    // --- Scene Notes panel ---
+
+    /** Controls whether the notes list is currently mounted. */
+    private sceneNotesContainer: HTMLElement | null = null;
+    private sceneNotesViewEl: HTMLElement | null = null;
+    private sceneNotesEditorNoteId: string | null = null;
+    private sceneNotesUnsubscribe: (() => void) | null = null;
+    private sceneNotesAutosaveTimer: number | null = null;
+    private sceneNotesTitleAutosaveTimer: number | null = null;
+    private sceneNotesFileOpenRef: any = null;
+    private sceneNotesCompact = false;
+    /**
+     * Cache of each book's canonical file order (read from book-config.json).
+     * Keyed by book folder path. Keeps list re-renders synchronous after the
+     * first load — critical for eliminating the empty-gap flash that causes
+     * the editor panel to shift up/down between list rebuilds.
+     */
+    private bookFileOrderCache = new Map<string, string[]>();
+    /** Set once the vault-modify listener is installed for cache invalidation. */
+    private bookFileOrderCacheRegistered = false;
+    /**
+     * Timestamp-based dblclick tracking for scene-note rows. We can't rely on
+     * the browser's native dblclick event because row DOM is replaced when
+     * notifyChange fires between the two clicks, which invalidates the
+     * browser's same-target check. Tracking by note id + timestamp works
+     * regardless of DOM replacement.
+     */
+    private sceneNotesLastClickTime = 0;
+    private sceneNotesLastClickId = '';
+
+    /**
+     * User-chosen textarea height for the Scene Notes editor, set by dragging
+     * the resize handle between the list and the editor. Persists for the
+     * lifetime of the view (reset on teardown) so switching notes preserves
+     * the size the user picked.
+     */
+    private sceneNotesTextareaHeight: number | null = null;
+
+    public async enterSceneNotesMode(openNoteId?: string): Promise<void> {
+        if (!this.normalView) return;
+        this.isNavigatorMode = false;
+        // Clear the stats-view marker so `isStatsViewVisible()` doesn't
+        // mistakenly return true — otherwise the 250ms stats-refresh timer
+        // (scheduled by revealLeaf → layout-change) would overwrite this view
+        // with the statistics panel a moment after it renders.
+        this.normalView.removeClass('book-smith-stats-view');
+        if (this.statsRefreshTimer !== null) {
+            window.clearTimeout(this.statsRefreshTimer);
+            this.statsRefreshTimer = null;
+        }
+        this.normalView.empty();
+        this.renderSceneNotesView(this.normalView, openNoteId);
+
+        // Subscribe to updates while this view is mounted.
+        if (!this.sceneNotesUnsubscribe) {
+            this.sceneNotesUnsubscribe = this.plugin.sceneNotesManager.onNotesChange(() => {
+                if (!this.sceneNotesContainer) return;
+                this.renderSceneNotesList(this.sceneNotesContainer);
+            });
+        }
+        // Also refresh when the active file changes (to reorder by the now-current book).
+        if (!this.sceneNotesFileOpenRef) {
+            this.sceneNotesFileOpenRef = this.app.workspace.on('file-open', () => {
+                if (!this.sceneNotesContainer) return;
+                this.renderSceneNotesList(this.sceneNotesContainer);
+            });
+            this.registerEvent(this.sceneNotesFileOpenRef);
+        }
+    }
+
+    /** Public entry point for focusing a specific note (e.g. from a gutter click). */
+    public openSceneNoteEditor(noteId: string): void {
+        void this.enterSceneNotesMode(noteId);
+    }
+
+    private renderSceneNotesView(container: HTMLElement, openNoteId?: string): void {
+        const view = container.createDiv({ cls: 'book-smith-scene-notes-view' });
+        this.sceneNotesViewEl = view;
+        if (this.sceneNotesCompact) view.addClass('is-compact');
+
+        // Header: back button + compact toggle on the right. No title row —
+        // the pane needs every bit of vertical space for notes.
+        const header = view.createDiv({ cls: 'book-smith-navigator-header' });
+        const backButton = header.createEl('button', { cls: 'book-smith-navigator-back-btn' });
+        setIcon(backButton, 'arrow-left');
+        backButton.appendChild(createSpan({ text: ' Back to Toolbox' }));
+        backButton.addEventListener('click', () => {
+            if (!this.normalView) return;
+            this.teardownSceneNotes();
+            this.normalView.empty();
+            this.createNormalView(this.normalView);
+        });
+
+        // Compact toggle — square action button at the far right of the header.
+        const compactBtn = header.createEl('button', {
+            cls: 'book-smith-scene-notes-compact-btn',
+            attr: { 'aria-label': 'Toggle compact view', title: 'Toggle compact view' }
+        });
+        setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+        if (this.sceneNotesCompact) compactBtn.addClass('is-active');
+        compactBtn.addEventListener('click', () => {
+            this.sceneNotesCompact = !this.sceneNotesCompact;
+            view.toggleClass('is-compact', this.sceneNotesCompact);
+            setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+            compactBtn.toggleClass('is-active', this.sceneNotesCompact);
+        });
+
+        // List section.
+        const listWrapper = view.createDiv({ cls: 'book-smith-scene-notes-list-wrapper' });
+        this.sceneNotesContainer = listWrapper;
+        // Attach a single click delegate on the container — survives row
+        // rebuilds. Per-row listeners would be lost every time notifyChange
+        // fires (color save, title autosave, line-tracker update) because
+        // rows get replaced, which also kills the browser's native dblclick
+        // detection. Timestamp-based detection below is immune to that.
+        this.attachSceneNotesClickDelegate(listWrapper);
+        this.renderSceneNotesList(listWrapper);
+
+        // Resize handle — drag up/down to grow/shrink the editor textarea.
+        // Sits between the list and the editor; CSS hides it when no note is
+        // selected (the editor itself is display:none in that state).
+        const resizeHandle = view.createDiv({ cls: 'book-smith-scene-notes-resize-handle' });
+        resizeHandle.setAttribute('role', 'separator');
+        resizeHandle.setAttribute('aria-orientation', 'horizontal');
+        resizeHandle.setAttribute('aria-label', 'Resize note editor');
+        this.attachSceneNotesResizeHandle(resizeHandle, view);
+
+        // Editor section — only populated when a note is selected.
+        view.createDiv({ cls: 'book-smith-scene-notes-editor', attr: { 'data-empty': 'true' } });
+
+        if (openNoteId) {
+            this.selectSceneNote(openNoteId);
+        }
+    }
+
+    /**
+     * Resolve notes + book file order asynchronously, THEN do a single sync
+     * empty+fill of the list container. The atomic DOM swap prevents the list
+     * from flashing empty, which in turn prevents the editor panel below from
+     * shifting up/down between rebuilds — the "color panel flash" the user
+     * reported.
+     */
+    private renderSceneNotesList(container: HTMLElement): void {
+        const activeFile = this.app.workspace.getActiveFile();
+        void (async () => {
+            if (activeFile?.extension === 'md') {
+                await this.plugin.sceneNotesManager.ensureLoadedForFile(activeFile.path);
+            }
+            if (this.sceneNotesContainer !== container) return;
+
+            const activeFilePath = activeFile?.extension === 'md' ? activeFile.path : null;
+            const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
+
+            // Resolve the book that owns the active file.
+            let activeBookId: string | null = null;
+            if (activeFilePath) {
+                const entry = allEntries.find(e =>
+                    activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
+                );
+                activeBookId = entry?.owner.uuid || null;
+            }
+
+            const projectEntries = activeBookId
+                ? allEntries.filter(e => e.owner.uuid === activeBookId)
+                : [];
+
+            // Pre-load ordered-file list before touching the DOM.
+            let orderedFiles: string[] = [];
+            if (projectEntries.length > 0) {
+                orderedFiles = await this.getBookFileOrderCached(projectEntries[0].owner.folderPath);
+            }
+            if (this.sceneNotesContainer !== container) return;
+
+            // Now do a sync rebuild — atomic empty+fill, no visible gap.
+            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId);
+        })();
+    }
+
+    /**
+     * Read the book's chapter tree and return a flat ordered list of relative
+     * file paths (e.g. ["Title Page.md", "Epigraph.md", "ACT I/Scene 1.md"]).
+     * Groups (folders) are traversed depth-first in their declared order.
+     * Falls back to an empty array if the config cannot be read.
+     */
+    private async getBookFileOrder(bookFolderPath: string): Promise<string[]> {
+        try {
+            const configPath = `${bookFolderPath}/book-config.json`;
+            const configFile = this.app.vault.getAbstractFileByPath(configPath);
+            if (!(configFile instanceof TFile)) return [];
+            const raw = await this.app.vault.read(configFile);
+            const book = JSON.parse(raw) as Book;
+            const result: string[] = [];
+            const flatten = (nodes: ChapterNode[], prefix = '') => {
+                const sorted = [...nodes].sort((a, b) => a.order - b.order);
+                for (const node of sorted) {
+                    if (node.type === 'file') {
+                        // path in book-config is relative to the book folder
+                        result.push(prefix ? `${prefix}/${node.path}` : node.path);
+                    } else if (node.children?.length) {
+                        flatten(node.children, prefix ? `${prefix}/${node.path}` : node.path);
+                    }
+                }
+            };
+            if (book.structure?.tree) flatten(book.structure.tree);
+            return result;
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Cached wrapper around getBookFileOrder. First call per book reads and
+     * caches; subsequent calls return the cached order synchronously (they
+     * still await at the call site but resolve immediately). Also lazy-installs
+     * a vault 'modify' listener that invalidates the cache when any
+     * book-config.json changes — so reordering the tree via drag-and-drop is
+     * reflected on the next render.
+     */
+    private async getBookFileOrderCached(bookFolderPath: string): Promise<string[]> {
+        const cached = this.bookFileOrderCache.get(bookFolderPath);
+        if (cached) return cached;
+        const fresh = await this.getBookFileOrder(bookFolderPath);
+        this.bookFileOrderCache.set(bookFolderPath, fresh);
+        if (!this.bookFileOrderCacheRegistered) {
+            this.bookFileOrderCacheRegistered = true;
+            this.registerEvent(this.app.vault.on('modify', (file) => {
+                if (file instanceof TFile && file.name === 'book-config.json') {
+                    this.bookFileOrderCache.clear();
+                    if (this.sceneNotesContainer) {
+                        this.renderSceneNotesList(this.sceneNotesContainer);
+                    }
+                }
+            }));
+        }
+        return fresh;
+    }
+
+    /**
+     * Sync render of the notes list given pre-resolved data. Called by
+     * renderSceneNotesList after all async deps are satisfied. Does a single
+     * empty+fill so the list never flashes empty.
+     */
+    private renderSceneNotesListSync(
+        container: HTMLElement,
+        projectEntries: Array<{ owner: BookOwner; note: SceneNote }>,
+        orderedFiles: string[],
+        activeBookId: string | null
+    ): void {
+        container.empty();
+
+        if (projectEntries.length === 0) {
+            container.createEl('p', {
+                cls: 'book-smith-navigator-empty',
+                text: activeBookId
+                    ? 'No scene notes yet. Press Ctrl+J in a paragraph to add one.'
+                    : 'Open a file in your book to see its scene notes.'
+            });
+            return;
+        }
+
+        const owner = projectEntries[0].owner;
+
+        {
+            const notes = projectEntries.map(e => e.note);
+
+            // Sub-group by relative file path within this book.
+            const groups = new Map<string, typeof notes>();
+            for (const note of notes) {
+                const rel = note.filePath.startsWith(owner.folderPath + '/')
+                    ? note.filePath.slice(owner.folderPath.length + 1)
+                    : note.filePath;
+                const arr = groups.get(rel) || [];
+                arr.push(note);
+                groups.set(rel, arr);
+            }
+
+            // Sort file groups by their position in the book's chapter tree,
+            // falling back to alphabetical for files not found in the tree.
+            const sortedGroupKeys = Array.from(groups.keys()).sort((a, b) => {
+                const ai = orderedFiles.indexOf(a);
+                const bi = orderedFiles.indexOf(b);
+                if (ai === -1 && bi === -1) return a.localeCompare(b);
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+            });
+
+            sortedGroupKeys.forEach(key => {
+                const section = container.createDiv({ cls: 'book-smith-scene-notes-group' });
+                section.createEl('h4', { cls: 'book-smith-scene-notes-group-title', text: key });
+
+                const notesInGroup = (groups.get(key) || []).slice().sort((a, b) => a.fromLine - b.fromLine);
+                notesInGroup.forEach(note => {
+                    const row = section.createDiv({ cls: 'book-smith-scene-notes-row' });
+                    if (note.id === this.sceneNotesEditorNoteId) row.addClass('is-active');
+
+                    const flag = row.createSpan({ cls: 'book-smith-scene-notes-row-flag' });
+                    setIcon(flag, 'flag');
+                    if (note.color) flag.style.setProperty('--scene-note-color', note.color);
+
+                    const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
+
+                    // Title row: real title or greyed-out content fallback.
+                    const noteTitle = note.title?.trim();
+                    const hasTitle = !!noteTitle;
+                    const titleEl = body.createDiv({ cls: 'book-smith-scene-notes-row-title' });
+                    if (hasTitle) {
+                        titleEl.setText(noteTitle!);
+                    } else {
+                        const fallback = (note.content || '').trim().split('\n')[0] || '(empty note)';
+                        titleEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
+                        titleEl.addClass('is-placeholder');
+                    }
+
+                    // Meta: created date + anchor line.
+                    const createdDate = note.createdAt ? new Date(note.createdAt) : null;
+                    const dateStr = createdDate
+                        ? createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
+                    body.createDiv({
+                        cls: 'book-smith-scene-notes-row-meta',
+                        text: [dateStr, `Line ${note.fromLine + 1}`].filter(Boolean).join(' · ')
+                    });
+
+                    row.dataset.noteId = note.id;
+                    // Click handling is done by the container-level delegate
+                    // in attachSceneNotesClickDelegate — no per-row listeners.
+                });
+            });
+        }
+    }
+
+    /**
+     * Wire up vertical drag on the resize handle between the list and the
+     * editor. Drag up → textarea grows (list shrinks); drag down → textarea
+     * shrinks (list grows). The chosen height is persisted in
+     * `sceneNotesTextareaHeight` so switching notes keeps the size.
+     *
+     * Bounds: textarea can't shrink below the CSS `min-height: 120px`, and
+     * can't grow past 75% of the view's height (so the list never disappears
+     * entirely). Mousemove/up are attached lazily on mousedown and removed
+     * on release, so no persistent global listeners.
+     */
+    private attachSceneNotesResizeHandle(handle: HTMLElement, view: HTMLElement): void {
+        handle.addEventListener('mousedown', (e) => {
+            const textareaEl = view.querySelector<HTMLTextAreaElement>('.book-smith-scene-notes-editor-textarea');
+            const editorEl = view.querySelector<HTMLElement>('.book-smith-scene-notes-editor');
+            if (!textareaEl || !editorEl) return;
+            if (editorEl.getAttribute('data-empty') === 'true') return;
+
+            e.preventDefault();
+            const startY = e.clientY;
+            const startHeight = textareaEl.offsetHeight;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            handle.addClass('is-dragging');
+
+            const onMove = (ev: MouseEvent) => {
+                const delta = startY - ev.clientY; // drag UP → positive → grow
+                const viewHeight = view.getBoundingClientRect().height;
+                const maxHeight = Math.max(120, viewHeight * 0.75);
+                const newHeight = Math.max(60, Math.min(maxHeight, startHeight + delta));
+                textareaEl.style.height = `${newHeight}px`;
+                this.sceneNotesTextareaHeight = newHeight;
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                handle.removeClass('is-dragging');
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+    }
+
+    /**
+     * Install a single mousedown delegate on the list container. We use
+     * `mousedown` rather than `click` because:
+     *   - `click` requires mousedown+mouseup to land on the SAME DOM node.
+     *     When notifyChange rebuilds the rows between press and release, the
+     *     browser silently drops the `click` event, so single-clicks were
+     *     intermittent.
+     *   - `mousedown` fires the instant the button goes down, before any
+     *     async rebuild can race with it. Every press reaches this handler.
+     *
+     * The delegate is attached once to the container (which is never
+     * replaced), so it survives all row rebuilds. Double-click is detected
+     * by timestamp + note id — immune to DOM replacement between presses,
+     * unlike the browser's native dblclick (which also requires same-target).
+     */
+    private attachSceneNotesClickDelegate(container: HTMLElement): void {
+        container.addEventListener('mousedown', (evt) => {
+            if (evt.button !== 0) return; // left-click only
+            const target = evt.target as HTMLElement | null;
+            if (!target) return;
+            const row = target.closest('.book-smith-scene-notes-row') as HTMLElement | null;
+            if (!row) return;
+            const noteId = row.dataset.noteId;
+            if (!noteId) return;
+
+            const now = Date.now();
+            const isDouble = (now - this.sceneNotesLastClickTime < 500)
+                && (this.sceneNotesLastClickId === noteId);
+            this.sceneNotesLastClickTime = now;
+            this.sceneNotesLastClickId = noteId;
+
+            // First press selects — idempotent if already selected, so the
+            // second press of a double-click just re-selects with no ill effect.
+            // `true` → glow the paragraph in the editor: this is a panel click,
+            // so the cue helps locate the scene. (Selections originating from
+            // the editor gutter flag pass false — you're already there.)
+            this.selectSceneNote(noteId, true);
+
+            // Second press on the SAME note within 500ms → navigate the
+            // main editor to that scene.
+            if (isDouble) {
+                const located = this.plugin.sceneNotesManager.getNoteById(noteId);
+                if (located) void this.plugin.focusEditorOnNote(located.note);
+            }
+        });
+    }
+
+    private selectSceneNote(noteId: string, triggerGlow = false): void {
+        this.sceneNotesEditorNoteId = noteId;
+        // Preserve the note list's scroll position across this selection — the
+        // editor below repopulates and the textarea autofocuses, either of
+        // which can otherwise nudge the list. Restore on the next frame.
+        const listEl = this.sceneNotesContainer;
+        const prevScroll = listEl?.scrollTop ?? 0;
+        if (listEl) {
+            requestAnimationFrame(() => { listEl.scrollTop = prevScroll; });
+        }
+        // Update active highlight directly in the DOM — no full re-render so there's no blink.
+        if (this.sceneNotesContainer) {
+            this.sceneNotesContainer.querySelectorAll<HTMLElement>('.book-smith-scene-notes-row').forEach(el => {
+                el.toggleClass('is-active', el.dataset.noteId === noteId);
+            });
+        }
+
+        const editor = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
+        if (!editor) return;
+        editor.empty();
+        editor.removeAttribute('data-empty');
+
+        const located = this.plugin.sceneNotesManager.getNoteById(noteId);
+        if (!located) {
+            editor.setAttribute('data-empty', 'true');
+            return;
+        }
+        const note = located.note;
+
+        // Subtle cue: glow the note's paragraph in any editor where it's
+        // currently visible (no scrolling). Only when the selection came from
+        // a panel click — clicking the editor's own gutter flag shouldn't
+        // glow (you're already looking right at it). No-op if the setting is
+        // off or the paragraph isn't on screen.
+        if (triggerGlow) {
+            this.plugin.glowSceneNoteInEditor(note);
+        }
+
+        const headerRow = editor.createDiv({ cls: 'book-smith-scene-notes-editor-header' });
+
+        // Left side: anchor line + created date.
+        const headerLeft = headerRow.createDiv({ cls: 'book-smith-scene-notes-editor-header-left' });
+        headerLeft.createEl('span', {
+            cls: 'book-smith-scene-notes-editor-title',
+            text: `Line ${note.fromLine + 1}${note.toLine !== note.fromLine ? `–${note.toLine + 1}` : ''}`
+        });
+        if (note.createdAt) {
+            const createdFull = new Date(note.createdAt).toLocaleDateString(undefined, {
+                month: 'short', day: 'numeric', year: 'numeric'
+            });
+            headerLeft.createEl('span', {
+                cls: 'book-smith-scene-notes-editor-created',
+                text: `Created ${createdFull}`
+            });
+        }
+
+        const deleteBtn = headerRow.createEl('button', {
+            cls: 'book-smith-scene-notes-delete-btn',
+            attr: { 'aria-label': 'Delete note' }
+        });
+        setIcon(deleteBtn, 'trash');
+        deleteBtn.addEventListener('click', async () => {
+            await this.plugin.sceneNotesManager.deleteNote(note.id);
+            this.sceneNotesEditorNoteId = null;
+            const ed = this.normalView?.querySelector('.book-smith-scene-notes-editor') as HTMLElement | null;
+            if (ed) { ed.empty(); ed.setAttribute('data-empty', 'true'); }
+            new Notice('Scene note deleted');
+        });
+
+        // Color swatch row — Final Draft-style palette.
+        const SCENE_NOTE_COLORS: Array<{ name: string; value: string | null }> = [
+            { name: 'None', value: null },
+            { name: 'Red', value: '#d94a4a' },
+            { name: 'Orange', value: '#e88a3a' },
+            { name: 'Yellow', value: '#e8c93a' },
+            { name: 'Green', value: '#4aa84a' },
+            { name: 'Blue', value: '#4a8ae8' },
+            { name: 'Purple', value: '#8a4ad9' },
+            { name: 'Grey', value: '#8a8a8a' }
+        ];
+
+        const colorRow = editor.createDiv({ cls: 'book-smith-scene-notes-color-row' });
+        colorRow.createEl('span', {
+            cls: 'book-smith-scene-notes-color-label',
+            text: 'Color:'
+        });
+        const swatches = colorRow.createDiv({ cls: 'book-smith-scene-notes-color-swatches' });
+
+        SCENE_NOTE_COLORS.forEach(({ name, value }) => {
+            const swatch = swatches.createDiv({
+                cls: 'book-smith-scene-notes-color-swatch',
+                attr: { 'aria-label': name, title: name }
+            });
+            if (value === null) {
+                swatch.addClass('is-none');
+            } else {
+                swatch.style.backgroundColor = value;
+            }
+            const isActive = (note.color || null) === value;
+            if (isActive) swatch.addClass('is-active');
+
+            swatch.addEventListener('click', async () => {
+                await this.plugin.sceneNotesManager.updateNote(note.id, {
+                    color: value === null ? undefined : value
+                });
+                // Refresh swatch selection state without rebuilding the whole editor.
+                swatches.querySelectorAll('.is-active').forEach(el => el.removeClass('is-active'));
+                swatch.addClass('is-active');
+            });
+        });
+
+        // Title input — optional, autosaves.
+        const titleInput = editor.createEl('input', {
+            cls: 'book-smith-scene-notes-title-input',
+            attr: { type: 'text', placeholder: 'Title (optional)…' }
+        }) as HTMLInputElement;
+        titleInput.value = note.title || '';
+
+        const scheduleTitleSave = () => {
+            if (this.sceneNotesTitleAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+            }
+            this.sceneNotesTitleAutosaveTimer = window.setTimeout(async () => {
+                this.sceneNotesTitleAutosaveTimer = null;
+                const val = titleInput.value.trim();
+                await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
+            }, 400);
+        };
+        titleInput.addEventListener('input', scheduleTitleSave);
+        titleInput.addEventListener('blur', async () => {
+            if (this.sceneNotesTitleAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+                this.sceneNotesTitleAutosaveTimer = null;
+            }
+            const val = titleInput.value.trim();
+            await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
+        });
+
+        editor.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+
+        // The textarea is rendered with transparent text — the *visible* text
+        // comes from the `mirror` div sitting in front of it (pointer-events
+        // none, so clicks/keys still hit the textarea). The mirror renders the
+        // same content with `<mark class="book-smith-tag-hl">` for `#tags` and
+        // `<span class="book-smith-wikilink-hl">[[file]]</span>` for wikilinks,
+        // both styled in purple. Identical font/padding/wrap rules between the
+        // two layers keep the cursor and selection aligned with what the user
+        // sees.
+        const textareaWrap = editor.createDiv({ cls: 'book-smith-scene-notes-textarea-wrap' });
+        const textarea = textareaWrap.createEl('textarea', {
+            cls: 'book-smith-scene-notes-editor-textarea',
+            attr: { placeholder: 'Write your note…', spellcheck: 'true' }
+        }) as HTMLTextAreaElement;
+        textarea.value = note.content || '';
+        // Apply any user-chosen height from the divider drag so switching notes
+        // preserves the size; otherwise the CSS min-height (120px) defaults in.
+        if (this.sceneNotesTextareaHeight !== null) {
+            textarea.style.height = `${this.sceneNotesTextareaHeight}px`;
+        }
+        const mirror = textareaWrap.createDiv({
+            cls: 'book-smith-scene-notes-textarea-mirror',
+            attr: { 'aria-hidden': 'true' }
+        });
+
+        const escapeHtml = (s: string) =>
+            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        const renderMirror = () => {
+            const text = textarea.value;
+            // Process wikilinks first; then tags. We do them on the already-
+            // escaped text and only insert HTML for matched spans, so the rest
+            // remains plain text. Tag regex uses a leading-boundary capture to
+            // avoid matching inside words (so `c#` in "C#" wouldn't match).
+            let html = escapeHtml(text);
+            html = html.replace(
+                /\[\[([^\]\r\n]+?)\]\]/g,
+                (_m, inner) => `<span class="book-smith-wikilink-hl">[[${inner}]]</span>`
+            );
+            html = html.replace(
+                /(^|[\s(])(#[\w/\-]+)/g,
+                (_m, lead, tag) => `${lead}<mark class="book-smith-tag-hl">${tag}</mark>`
+            );
+            // Trailing newline keeps the mirror's last-line height in sync
+            // with the textarea when the content ends in a newline.
+            mirror.innerHTML = html + '\n';
+        };
+        renderMirror();
+
+        textarea.addEventListener('input', () => {
+            renderMirror();
+            renderLinkSuggest();
+        });
+        textarea.addEventListener('scroll', () => {
+            mirror.scrollTop = textarea.scrollTop;
+            mirror.scrollLeft = textarea.scrollLeft;
+        });
+
+        // --- Wikilink autocomplete popup ---
+        //
+        // Triggered while the cursor sits inside an unclosed `[[…` on a single
+        // line. Filters vault markdown files by basename/path against the
+        // partial query and lets the user commit with Enter / Tab / click.
+
+        const suggestPopup = textareaWrap.createDiv({
+            cls: 'book-smith-scene-notes-link-suggest'
+        });
+        suggestPopup.style.display = 'none';
+
+        let suggestItems: TFile[] = [];
+        let suggestActiveIndex = 0;
+
+        const closeSuggest = () => {
+            suggestPopup.style.display = 'none';
+            suggestPopup.empty();
+            suggestItems = [];
+            suggestActiveIndex = 0;
+        };
+
+        /** If the caret sits inside `[[…` with no closing `]]` on the same line,
+         *  return the position right after `[[` and the query so far. */
+        const findOpenLinkContext = (): { start: number; query: string } | null => {
+            if (textarea.selectionStart !== textarea.selectionEnd) return null;
+            const cursor = textarea.selectionStart;
+            const value = textarea.value;
+            const lastOpen = value.lastIndexOf('[[', cursor);
+            if (lastOpen < 0) return null;
+            const between = value.slice(lastOpen + 2, cursor);
+            if (between.includes(']]') || between.includes('\n')) return null;
+            return { start: lastOpen + 2, query: between };
+        };
+
+        const renderLinkSuggest = () => {
+            const ctx = findOpenLinkContext();
+            if (!ctx) { closeSuggest(); return; }
+
+            const all = this.app.vault.getMarkdownFiles();
+            const q = ctx.query.toLowerCase();
+            const matches = (q
+                ? all.filter(f =>
+                    f.basename.toLowerCase().includes(q) ||
+                    f.path.toLowerCase().includes(q))
+                : all
+            ).slice(0, 10);
+
+            if (matches.length === 0) { closeSuggest(); return; }
+
+            suggestItems = matches;
+            if (suggestActiveIndex >= matches.length) suggestActiveIndex = 0;
+
+            suggestPopup.empty();
+            suggestPopup.style.display = '';
+            matches.forEach((file, i) => {
+                const item = suggestPopup.createDiv({
+                    cls: 'book-smith-scene-notes-link-suggest-item'
+                        + (i === suggestActiveIndex ? ' is-active' : '')
+                });
+                item.createSpan({
+                    cls: 'book-smith-scene-notes-link-suggest-name',
+                    text: file.basename
+                });
+                const parentPath = file.parent?.path && file.parent.path !== '/' ? file.parent.path : '';
+                if (parentPath) {
+                    item.createSpan({
+                        cls: 'book-smith-scene-notes-link-suggest-path',
+                        text: parentPath
+                    });
+                }
+                // mousedown (not click) so the textarea doesn't blur first.
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    commitLinkSuggest(i);
+                });
+            });
+        };
+
+        const commitLinkSuggest = (idx: number) => {
+            const ctx = findOpenLinkContext();
+            if (!ctx) { closeSuggest(); return; }
+            const file = suggestItems[idx];
+            if (!file) { closeSuggest(); return; }
+
+            const value = textarea.value;
+            const cursor = textarea.selectionStart;
+            const before = value.slice(0, ctx.start);
+            const after = value.slice(cursor);
+            // Append `]]` only if the user hasn't typed it themselves.
+            const postfix = after.startsWith(']]') ? '' : ']]';
+            const inserted = file.basename;
+            const newValue = before + inserted + postfix + after;
+            const newCursor = before.length + inserted.length + postfix.length;
+            textarea.value = newValue;
+            textarea.setSelectionRange(newCursor, newCursor);
+            // Trigger save + mirror refresh.
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            closeSuggest();
+        };
+
+        textarea.addEventListener('keydown', (e) => {
+            if (suggestPopup.style.display === 'none') return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                suggestActiveIndex = (suggestActiveIndex + 1) % suggestItems.length;
+                renderLinkSuggest();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                suggestActiveIndex = (suggestActiveIndex - 1 + suggestItems.length) % suggestItems.length;
+                renderLinkSuggest();
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                commitLinkSuggest(suggestActiveIndex);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSuggest();
+            }
+        });
+        /** If `pos` falls inside a `[[…]]` token, return the inner text. */
+        const findWikilinkAt = (text: string, pos: number): string | null => {
+            const re = /\[\[([^\]\r\n]+?)\]\]/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(text)) !== null) {
+                const start = m.index;
+                const end = m.index + m[0].length;
+                if (pos >= start && pos <= end) return m[1];
+            }
+            return null;
+        };
+
+        // Ctrl/Cmd+click on a [[wikilink]] opens the linked file — same
+        // chord Obsidian's edit mode uses. Plain clicks still position the
+        // cursor for editing. Click handler runs after the browser's
+        // mousedown moves the caret, so `selectionStart` is the click target.
+        textarea.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                const cursor = textarea.selectionStart;
+                const linkText = findWikilinkAt(textarea.value, cursor);
+                if (linkText) {
+                    e.preventDefault();
+                    // Strip pipe alias (Obsidian's openLinkText takes just
+                    // file[#section], not the alias half).
+                    const target = linkText.split('|')[0].trim();
+                    if (target) {
+                        // Open in a new pane on middle-button-equivalent
+                        // (Cmd+Shift+click). Otherwise reuse the active leaf.
+                        const newLeaf = e.shiftKey;
+                        this.app.workspace.openLinkText(target, note.filePath, newLeaf);
+                    }
+                    return;
+                }
+            }
+            renderLinkSuggest();
+        });
+        textarea.addEventListener('keyup', (e) => {
+            // Caret-moving keys; refresh suggestions for the new context.
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                || e.key === 'Home' || e.key === 'End') {
+                renderLinkSuggest();
+            }
+        });
+        textarea.addEventListener('blur', () => {
+            // Defer so a popup mousedown can fire its handler before we hide.
+            window.setTimeout(() => {
+                if (document.activeElement !== textarea) closeSuggest();
+            }, 100);
+        });
+
+        const scheduleSave = () => {
+            if (this.sceneNotesAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesAutosaveTimer);
+            }
+            this.sceneNotesAutosaveTimer = window.setTimeout(async () => {
+                this.sceneNotesAutosaveTimer = null;
+                await this.plugin.sceneNotesManager.updateNote(note.id, { content: textarea.value });
+            }, 400);
+        };
+        textarea.addEventListener('input', scheduleSave);
+        textarea.addEventListener('blur', async () => {
+            if (this.sceneNotesAutosaveTimer !== null) {
+                window.clearTimeout(this.sceneNotesAutosaveTimer);
+                this.sceneNotesAutosaveTimer = null;
+            }
+            await this.plugin.sceneNotesManager.updateNote(note.id, { content: textarea.value });
+        });
+
+        // Auto-focus the textarea when the editor opens so Ctrl+J flow is
+        // seamless. `preventScroll` stops the browser from scrolling an
+        // ancestor (the note list) to bring the textarea into view, which
+        // otherwise jumps the list back to the top.
+        window.setTimeout(() => textarea.focus({ preventScroll: true }), 0);
+    }
+
+    private teardownSceneNotes(): void {
+        if (this.sceneNotesUnsubscribe) {
+            this.sceneNotesUnsubscribe();
+            this.sceneNotesUnsubscribe = null;
+        }
+        if (this.sceneNotesFileOpenRef) {
+            this.app.workspace.offref(this.sceneNotesFileOpenRef);
+            this.sceneNotesFileOpenRef = null;
+        }
+        if (this.sceneNotesAutosaveTimer !== null) {
+            window.clearTimeout(this.sceneNotesAutosaveTimer);
+            this.sceneNotesAutosaveTimer = null;
+        }
+        if (this.sceneNotesTitleAutosaveTimer !== null) {
+            window.clearTimeout(this.sceneNotesTitleAutosaveTimer);
+            this.sceneNotesTitleAutosaveTimer = null;
+        }
+        this.sceneNotesContainer = null;
+        this.sceneNotesViewEl = null;
+        this.sceneNotesEditorNoteId = null;
+        this.sceneNotesTextareaHeight = null;
+    }
+
     // Override onClose to ensure all views are properly closed
     async onClose() {
+        if (this.statsChangeUnsubscribe) {
+            this.statsChangeUnsubscribe();
+            this.statsChangeUnsubscribe = null;
+        }
+        this.teardownSceneNotes();
         if (this.focusView) {
             this.focusView.remove();
             this.focusView = null;

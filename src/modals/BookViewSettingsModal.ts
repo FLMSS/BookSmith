@@ -4,9 +4,11 @@ import { i18n } from '../i18n/i18n';
 import { Book, BookWritingPeriod } from '../types/book';
 import { NamePromptModal } from './NamePromptModal';
 import { getDailyRolloverOptions, getLogicalDayISODate, normalizeDailyRolloverMinutes } from '../utils/logicalDay';
+import { LeftPaneStatKey, LEFT_PANE_STAT_KEYS, LEFT_PANE_STAT_LABEL, LEFT_PANE_STAT_VISIBILITY_FIELD, sanitizeLeftPaneStatOrder } from '../settings/settings';
 
 export class BookViewSettingsModal extends Modal {
     private statsSectionExpanded = false;
+    private sceneNotesSectionExpanded = false;
     private projectManagementSectionExpanded = false;
     private coverSectionExpanded = false;
     private goalSectionExpanded = false;
@@ -62,6 +64,7 @@ export class BookViewSettingsModal extends Modal {
         const sectionList = container.createDiv({ cls: 'book-smith-book-view-settings-list' });
 
         this.renderStatsSection(sectionList);
+        this.renderSceneNotesSection(sectionList);
         this.renderProjectManagementSection(sectionList);
         this.renderCoverSection(sectionList);
         this.renderGoalSection(sectionList);
@@ -115,11 +118,125 @@ export class BookViewSettingsModal extends Modal {
             return;
         }
 
-        this.addInfoToggle(detail, 'Today value', 'todayWords');
-        this.addInfoToggle(detail, 'Total value', 'totalWords');
-        this.addInfoToggle(detail, 'Completion', 'completion');
-        this.addInfoToggle(detail, 'Writing days', 'writingDays');
-        this.addInfoToggle(detail, 'Daily average value', 'dailyAverage');
+        // Per-row visibility + reorder (▲▼). The order drives the bottom-left
+        // stat block; toggles hide individual rows.
+        const order = sanitizeLeftPaneStatOrder(this.plugin.settings.bookView?.leftPanelInfo?.order);
+        order.forEach((key, idx) => {
+            const field = LEFT_PANE_STAT_VISIBILITY_FIELD[key];
+            new Setting(detail)
+                .setName(LEFT_PANE_STAT_LABEL[key])
+                .addExtraButton(btn => btn
+                    .setIcon('chevron-up')
+                    .setTooltip('Move up')
+                    .setDisabled(idx === 0)
+                    .onClick(() => { void this.moveStat(order, idx, -1); }))
+                .addExtraButton(btn => btn
+                    .setIcon('chevron-down')
+                    .setTooltip('Move down')
+                    .setDisabled(idx === order.length - 1)
+                    .onClick(() => { void this.moveStat(order, idx, 1); }))
+                .addToggle(toggle => toggle
+                    .setValue(this.getInfoSettings()[field])
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookView.leftPanelInfo[field] = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    }));
+        });
+
+        new Setting(detail)
+            .addButton(btn => btn
+                .setButtonText('Reset to default order')
+                .setTooltip('Restore the original order and show all rows')
+                .onClick(async () => {
+                    const info = this.plugin.settings.bookView.leftPanelInfo;
+                    info.order = [...LEFT_PANE_STAT_KEYS];
+                    info.todayWords = true;
+                    info.currentFile = true;
+                    info.totalWords = true;
+                    info.completion = true;
+                    info.writingDays = true;
+                    info.dailyAverage = true;
+                    await this.plugin.saveSettings();
+                    this.onSettingsChanged();
+                    this.onOpen();
+                }));
+    }
+
+    private renderSceneNotesSection(sectionList: HTMLElement): void {
+        const section = sectionList.createDiv({ cls: 'book-smith-book-view-settings-section' });
+        const sectionHeader = section.createEl('button', {
+            cls: 'book-smith-book-view-settings-section-header',
+            attr: { type: 'button' }
+        });
+
+        const left = sectionHeader.createDiv({ cls: 'book-smith-book-view-settings-section-left' });
+        const chevron = left.createSpan({ cls: 'book-smith-book-view-settings-chevron' });
+        setIcon(chevron, this.sceneNotesSectionExpanded ? 'chevron-down' : 'chevron-right');
+        left.createEl('span', { text: 'Scene Notes' });
+
+        const glowOn = this.plugin.settings.sceneNoteGlowOnClick !== false;
+        sectionHeader.createEl('span', {
+            cls: `book-smith-book-view-settings-badge${glowOn ? ' is-on' : ' is-off'}`,
+            text: glowOn ? 'Glow on' : 'Glow off'
+        });
+
+        sectionHeader.addEventListener('click', () => {
+            this.sceneNotesSectionExpanded = !this.sceneNotesSectionExpanded;
+            this.onOpen();
+        });
+
+        if (!this.sceneNotesSectionExpanded) {
+            return;
+        }
+
+        const detail = section.createDiv({ cls: 'book-smith-book-view-settings-detail' });
+
+        new Setting(detail)
+            .setName('Glow note in editor on click')
+            .setDesc('When you click a scene note, briefly glow its paragraph in any open editor where it is visible. Does not scroll or move anything.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(glowOn)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowOnClick = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                        this.onOpen();
+                    });
+            });
+
+        if (!glowOn) {
+            return;
+        }
+
+        const fullRow = this.plugin.settings.sceneNoteGlowFullRow !== false;
+        new Setting(detail)
+            .setName('Highlight full row width')
+            .setDesc('On: glow spans the whole row width. Off: glow hugs the actual text, stopping where each line ends.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(fullRow)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowFullRow = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        const matchColor = this.plugin.settings.sceneNoteGlowMatchColor === true;
+        new Setting(detail)
+            .setName('Match flag color')
+            .setDesc('On: the glow takes the note\'s flag color (a yellow flag glows yellow), kept light. Off: always purple.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(matchColor)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteGlowMatchColor = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
     }
 
     private renderProjectManagementSection(sectionList: HTMLElement): void {
@@ -1269,8 +1386,21 @@ export class BookViewSettingsModal extends Modal {
             totalWords: current?.totalWords ?? true,
             completion: current?.completion ?? true,
             writingDays: current?.writingDays ?? true,
-            dailyAverage: current?.dailyAverage ?? true
+            dailyAverage: current?.dailyAverage ?? true,
+            currentFile: current?.currentFile ?? true
         };
+    }
+
+    /** Swap a stat with its neighbour in the display order, then re-render. */
+    private async moveStat(order: LeftPaneStatKey[], idx: number, dir: number): Promise<void> {
+        const target = idx + dir;
+        if (target < 0 || target >= order.length) return;
+        const next = [...order];
+        [next[idx], next[target]] = [next[target], next[idx]];
+        this.plugin.settings.bookView.leftPanelInfo.order = next;
+        await this.plugin.saveSettings();
+        this.onSettingsChanged();
+        this.onOpen();
     }
 
     private formatPages(words: number, wordsPerPage: number): string {

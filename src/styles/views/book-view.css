@@ -17,10 +17,14 @@
     display: flex;
     gap: var(--book-smith-gap);
     padding: 15px 10px 15px 10px;
+    /* Establish a size container so the buttons below can respond to the
+       sidebar's width (collapse to icon-only when it gets narrow). */
+    container-type: inline-size;
+    container-name: book-smith-toolbar;
 }
 
 .book-smith-toolbar-btn {
-    padding: 5px 10px;
+    padding: 5px 8px;
     border-radius: var(--book-smith-border-radius);
     background: var(--book-smith-background);
     cursor: pointer;
@@ -32,6 +36,35 @@
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
+}
+
+/*
+ * "New Project" / "Manage Projects" — content-sized at comfortable widths
+ * (so the row isn't two equal halves with big empty padding), but allowed to
+ * SHRINK when the sidebar narrows (`0 1 auto` + min-width:0). Their labels
+ * ellipsize as space tightens, then collapse to icon-only below the container
+ * breakpoint — so the sidebar can be dragged much smaller.
+ */
+.book-smith-toolbar-btn.book-smith-toolbar-btn-new,
+.book-smith-toolbar-btn.book-smith-toolbar-btn-manage {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/*
+ * Narrow sidebar → drop the text labels and center the icons, turning both
+ * CTAs into compact icon buttons. 230px is roughly where the two labels stop
+ * fitting side by side.
+ */
+@container book-smith-toolbar (max-width: 165px) {
+    .book-smith-toolbar-btn span {
+        display: none;
+    }
+    .book-smith-toolbar-btn {
+        flex: 0 0 auto;
+        justify-content: center;
+        padding: 5px 7px;
+    }
 }
 
 .book-smith-toolbar-btn svg {
@@ -114,6 +147,56 @@
 
 .book-smith-book-header-settings-glyph {
     font-size: 13px;
+    line-height: 1;
+    font-family: "Segoe UI Symbol", var(--font-interface), sans-serif;
+}
+
+/*
+ * "Jump to active file's project" button — same dimensions as the settings
+ * gear but pinned to the TOP-right corner of the cover. Hidden by default;
+ * the BookSmithView toggles `.is-visible` when the active file resolves to a
+ * project other than the one currently shown in the left pane.
+ */
+.book-smith-book-header-jump-btn {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 0;
+    background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+    color: var(--text-muted);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+    box-shadow:
+        0 0 0 1px var(--background-modifier-border),
+        0 6px 14px rgba(0, 0, 0, 0.16);
+    transition: transform 120ms ease, color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.book-smith-book-header-jump-btn.is-visible {
+    display: flex;
+}
+
+.book-smith-book-header-jump-btn:hover {
+    background: color-mix(in srgb, var(--background-primary) 78%, var(--interactive-hover) 22%);
+    color: var(--text-normal);
+    transform: translateY(-1px);
+    box-shadow:
+        0 0 0 1px var(--background-modifier-border-hover),
+        0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.book-smith-book-header-jump-btn:active {
+    transform: translateY(0);
+}
+
+.book-smith-book-header-jump-glyph {
+    font-size: 14px;
     line-height: 1;
     font-family: "Segoe UI Symbol", var(--font-interface), sans-serif;
 }

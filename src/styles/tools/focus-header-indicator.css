@@ -1,8 +1,8 @@
 /* --- Glow smoothing and anti-banding improvements --- */
 .book-smith-mini-focus-ring {
-    stroke: #ff7a1a;
+    stroke: #7c59f0;
     transition: stroke-dashoffset 0.25s ease;
-    filter: drop-shadow(0 0 10px rgba(255,106,0,0.45));
+    filter: drop-shadow(0 0 10px rgba(124,89,240,0.45));
     stroke-linecap: round;
     stroke-linejoin: round;
     shape-rendering: geometricPrecision;
@@ -158,7 +158,7 @@
 }
 
 .book-smith-mini-focus-ring {
-    stroke: #ff7a1a;
+    stroke: #7c59f0;
     transition: stroke-dashoffset 0.25s ease;
 }
 

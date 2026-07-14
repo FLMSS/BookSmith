@@ -1,4 +1,4 @@
-import { App, Modal, Setting, Notice, TFolder } from 'obsidian';
+import { App, Modal, Setting, Notice, TFolder, setIcon } from 'obsidian';
 import { EditBookModal } from './EditBookModal';
 import { ConfirmModal } from './ConfirmModal';
 import { UnimportedBooksModal } from './UnimportedBooksModal'; // 添加导入
@@ -9,11 +9,17 @@ import { Book } from '../types/book';
 import { i18n } from '../i18n/i18n';
 import { formatWordCount } from '../utils/wordCount';
 
+export type ManageBooksChange =
+    | { type: 'deleted'; bookId: string }
+    | { type: 'edited'; bookId: string }
+    | { type: 'imported'; bookId: string }
+    | { type: 'selected'; bookId: string };
+
 export class ManageBooksModal extends Modal {
     constructor(
         app: App,
         private plugin: BookSmithPlugin,
-        private onBookChange?: (result: { type: 'deleted' | 'edited' | 'imported', bookId: string }) => void
+        private onBookChange?: (result: ManageBooksChange) => void
     ) {
         super(app);
     }
@@ -22,11 +28,19 @@ export class ManageBooksModal extends Modal {
     private bookList: HTMLDivElement;
     private books: Book[] = [];
     private expandedFolders: Set<string> = new Set();
+    private compact: boolean = false;
+    private compactBtn: HTMLButtonElement | null = null;
 
     async onOpen() {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass('book-smith-manage-books-modal');
+
+        // Load persisted compact preference and apply the class up-front so
+        // the first paint renders in the right mode (no flash).
+        this.compact = !!this.plugin.settings.manageBooksCompact;
+        contentEl.toggleClass('is-compact', this.compact);
+
         contentEl.createEl('h2', { text: i18n.t('MANAGE_BOOKS_TITLE') });
 
         // 添加搜索框和导入按钮的容器
@@ -45,6 +59,29 @@ export class ManageBooksModal extends Modal {
 
         // 添加导入按钮
         const actionsWrap = topContainer.createDiv({ cls: 'book-smith-manage-actions' });
+
+        // Compact-view toggle. Carries over the former "Switch Projects"
+        // dense layout now that switch & manage live in one modal. Persisted
+        // to plugin settings so the user's preference sticks across opens.
+        const compactBtn = actionsWrap.createEl('button', {
+            cls: `book-smith-manage-compact-btn${this.compact ? ' is-active' : ''}`,
+            attr: {
+                'aria-label': 'Toggle compact view',
+                title: this.compact ? 'Switch to rich view' : 'Switch to compact view'
+            }
+        });
+        this.compactBtn = compactBtn;
+        this.updateCompactBtnIcon();
+        compactBtn.addEventListener('click', async () => {
+            this.compact = !this.compact;
+            contentEl.toggleClass('is-compact', this.compact);
+            compactBtn.toggleClass('is-active', this.compact);
+            compactBtn.setAttribute('title', this.compact ? 'Switch to rich view' : 'Switch to compact view');
+            this.updateCompactBtnIcon();
+            this.plugin.settings.manageBooksCompact = this.compact;
+            await this.plugin.saveSettings();
+        });
+
         const importButton = actionsWrap.createEl('button', {
             text: i18n.t('IMPORT_BOOK'),
             cls: 'book-smith-import-button'
@@ -227,27 +264,16 @@ export class ManageBooksModal extends Modal {
                     }`
                 );
 
+            // Select (CTA) — primary action, replaces the standalone Switch
+            // Projects modal. Sets lastBookId via onBookChange and closes.
             setting.addButton(btn => btn
-                .setButtonText(i18n.t('DELETE_BOOK'))
-                .setWarning()
+                .setButtonText(i18n.t('SELECT_BOOK'))
+                .setCta()
                 .onClick(() => {
-                    new ConfirmModal(
-                        this.app,
-                        i18n.t('DELETE_BOOK_TITLE'),
-                        i18n.t('DELETE_BOOK_DESC', { title: book.basic.title }),
-                        async () => {
-                            try {
-                                await this.plugin.bookManager.deleteBook(book.basic.uuid);
-                                new Notice(i18n.t('DELETE_SUCCESS'));
-                                this.onBookChange?.({ type: 'deleted', bookId: book.basic.uuid });
-                                this.books = await this.plugin.bookManager.getAllBooks();
-                                this.renderBooks(this.filterBooks(this.books));
-                            } catch (error) {
-                                new Notice(i18n.t('DELETE_FAILED') + error.message);
-                            }
-                        }
-                    ).open();
-                })).addButton(btn => btn
+                    this.onBookChange?.({ type: 'selected', bookId: book.basic.uuid });
+                    this.close();
+                }))
+                .addButton(btn => btn
                     .setButtonText(i18n.t('EDIT_BOOK'))
                     .onClick(() => {
                         new EditBookModal(
@@ -277,9 +303,42 @@ export class ManageBooksModal extends Modal {
                                 await this.assignBookToFolder(book.basic.uuid, selectedFolder);
                             }
                         ).open();
+                    }))
+                // Delete last — destructive actions go at the trailing edge to
+                // reduce the chance of a misclick when the user meant Select.
+                .addButton(btn => btn
+                    .setButtonText(i18n.t('DELETE_BOOK'))
+                    .setWarning()
+                    .onClick(() => {
+                        new ConfirmModal(
+                            this.app,
+                            i18n.t('DELETE_BOOK_TITLE'),
+                            i18n.t('DELETE_BOOK_DESC', { title: book.basic.title }),
+                            async () => {
+                                try {
+                                    await this.plugin.bookManager.deleteBook(book.basic.uuid);
+                                    new Notice(i18n.t('DELETE_SUCCESS'));
+                                    this.onBookChange?.({ type: 'deleted', bookId: book.basic.uuid });
+                                    this.books = await this.plugin.bookManager.getAllBooks();
+                                    this.renderBooks(this.filterBooks(this.books));
+                                } catch (error) {
+                                    new Notice(i18n.t('DELETE_FAILED') + error.message);
+                                }
+                            }
+                        ).open();
                     }));
             }
         }
+    }
+
+    /**
+     * Swap the compact-toggle icon to reflect current state. `list` = we're
+     * in compact; `align-justify` = we're in rich (each row is wider/taller).
+     * Matches the same icon convention used by the Scene Notes compact toggle.
+     */
+    private updateCompactBtnIcon() {
+        if (!this.compactBtn) return;
+        setIcon(this.compactBtn, this.compact ? 'list' : 'align-justify');
     }
 
     private getProjectFolderMap(): Record<string, string> {

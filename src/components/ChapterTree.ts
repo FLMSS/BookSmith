@@ -1,5 +1,11 @@
-import { setIcon, App, TFile, Notice, Menu, Keymap } from 'obsidian';
+import { setIcon, App, TFile, TFolder, Notice, Menu, Keymap } from 'obsidian';
 import { Book, ChapterNode } from '../types/book';
+import {
+    SCENE_NOTES_FILE_PREFIX,
+    LEGACY_SINGLE_FILE,
+    SCENE_NOTES_FOLDER,
+    SCENE_NOTES_FOLDER_BACKUP
+} from '../types/sceneNote';
 import { BookManager } from '../services/BookManager';
 import { NamePromptModal } from '../modals/NamePromptModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
@@ -22,6 +28,10 @@ export class ChapterTree {
     // === 核心渲染方法 ===
     render(book: Book) {
         this.book = { ...book };
+
+        // Make the rendered tree mirror what's actually on disk (prune missing,
+        // append new) for this render. In-memory only — no persistence here.
+        this.reconcileDisplayTree();
 
         // 添加容器点击处理
         this.container.addEventListener('contextmenu', (e) => {
@@ -62,6 +72,115 @@ export class ChapterTree {
         const list = this.container.createEl('ul', { cls: 'book-smith-tree-list' });
         this.book.structure.tree.forEach(node => this.renderNode(list, node));
     }
+    // === Disk-derived display reconciliation ===
+    //
+    // The pane renders from book.structure.tree, but the filesystem is the
+    // real source of truth for which chapters exist. Rather than persist the
+    // tree on every vault event (write amplification, races, sync conflicts,
+    // metadata loss on moves), we reconcile the in-memory tree against disk at
+    // RENDER time and never write here. The stored config keeps the user's
+    // curated order + per-node metadata untouched; a genuine edit (drag, add,
+    // status change) is what persists the reconciled tree later.
+    //
+    // Result: the pane always shows exactly what's on disk, in stored order,
+    // with externally-added files appended at the end — no matter how a file
+    // arrived or left, and with zero writes triggered by merely viewing.
+    private reconcileDisplayTree(): void {
+        this.pruneMissing(this.book.structure.tree);
+        this.appendDiskOnly();
+    }
+
+    /** True for paths the chapter tree should never surface. */
+    private isInternalSegment(seg: string): boolean {
+        if (seg.startsWith('.')) return true;
+        if (seg === 'book-config.json') return true;
+        if (seg === SCENE_NOTES_FOLDER) return true;
+        if (seg === SCENE_NOTES_FOLDER_BACKUP) return true;
+        if (seg === LEGACY_SINGLE_FILE) return true;
+        if (seg.startsWith(SCENE_NOTES_FILE_PREFIX)) return true;
+        if (seg.endsWith('.bak')) return true;
+        return false;
+    }
+
+    /** Remove nodes whose backing file/folder no longer exists (recursively). */
+    private pruneMissing(nodes: ChapterNode[]): void {
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const node = nodes[i];
+            const onDisk = this.app.vault.getAbstractFileByPath(`${this.bookPath}/${node.path}`);
+            if (node.type === 'file') {
+                if (!(onDisk instanceof TFile)) nodes.splice(i, 1);
+            } else {
+                if (!(onDisk instanceof TFolder)) nodes.splice(i, 1);
+                else if (node.children) this.pruneMissing(node.children);
+            }
+        }
+    }
+
+    /** Append any on-disk markdown files/folders missing from the tree, at end. */
+    private appendDiskOnly(): void {
+        const root = this.app.vault.getAbstractFileByPath(this.bookPath);
+        if (!(root instanceof TFolder)) return;
+
+        const diskPaths: Array<{ rel: string; isFile: boolean }> = [];
+        const collect = (folder: TFolder, prefix: string) => {
+            for (const child of folder.children) {
+                if (this.isInternalSegment(child.name)) continue;
+                const rel = prefix ? `${prefix}/${child.name}` : child.name;
+                if (child instanceof TFolder) {
+                    diskPaths.push({ rel, isFile: false });
+                    collect(child, rel);
+                } else if (child instanceof TFile && child.extension === 'md') {
+                    diskPaths.push({ rel, isFile: true });
+                }
+            }
+        };
+        collect(root, '');
+
+        // Shallowest-first so parent groups exist before children; alphabetical
+        // within a depth for stable append order.
+        diskPaths.sort((a, b) => {
+            const d = a.rel.split('/').length - b.rel.split('/').length;
+            return d !== 0 ? d : a.rel.localeCompare(b.rel);
+        });
+
+        for (const { rel, isFile } of diskPaths) {
+            this.ensureNodePath(rel.split('/').filter(s => s.length > 0), isFile);
+        }
+    }
+
+    /** Ensure a node chain exists for the given path parts (creating groups). */
+    private ensureNodePath(segments: string[], lastIsFile: boolean): void {
+        let siblings = this.book.structure.tree;
+        let cumulative = '';
+        for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            cumulative = cumulative ? `${cumulative}/${seg}` : seg;
+            const isLast = i === segments.length - 1;
+            const nodeIsFile = isLast && lastIsFile;
+
+            let node = siblings.find(n => n.path === cumulative);
+            if (!node) {
+                node = {
+                    id: crypto.randomUUID(),
+                    title: nodeIsFile ? seg.replace(/\.md$/, '') : seg,
+                    type: nodeIsFile ? 'file' : 'group',
+                    path: cumulative,
+                    order: siblings.reduce((m, n) => Math.max(m, n.order ?? 0), -1) + 1,
+                    default_status: 'draft',
+                    created_at: new Date().toISOString(),
+                    last_modified: new Date().toISOString(),
+                    ...(nodeIsFile ? {} : { children: [], is_expanded: true })
+                };
+                siblings.push(node);
+            }
+            if (!nodeIsFile) {
+                if (node.type !== 'group') return;
+                node.children = node.children || [];
+                siblings = node.children;
+            }
+        }
+    }
+
     // 在类的开头添加一个工具方法
     private updateNodesOrder(nodes: ChapterNode[], startOrder: number = 1): number {
         let currentOrder = startOrder;
