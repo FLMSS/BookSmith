@@ -11,6 +11,7 @@ import { ReferenceManager } from '../services/ReferenceManager';
 import { i18n } from '../i18n/i18n';
 import { formatWordCount } from '../utils/wordCount';
 import { BookViewSettingsModal } from '../modals/BookViewSettingsModal';
+import { LeftPaneStatKey, LEFT_PANE_STAT_VISIBILITY_FIELD, sanitizeLeftPaneStatOrder } from '../settings/settings';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -74,7 +75,7 @@ export class BookSmithView extends ItemView {
         // "jump to active file's project" corner button's visibility can change.
         this.registerEvent(
             this.app.workspace.on('file-open', () => {
-                void this.updateJumpToProjectButtonVisibility();
+                void this.handleActiveFileProjectSync();
             })
         );
     }
@@ -405,100 +406,109 @@ export class BookSmithView extends ItemView {
         const visibility = this.plugin.settings.bookView?.leftPanelInfo;
         const metricMode = visibility?.metricMode === 'pages' ? 'pages' : 'words';
         const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
-        const settings = {
-            enabled: visibility?.enabled ?? true,
+        const enabled = visibility?.enabled ?? true;
+        const vis: Record<string, boolean> = {
             todayWords: visibility?.todayWords ?? true,
             totalWords: visibility?.totalWords ?? true,
             completion: visibility?.completion ?? true,
             writingDays: visibility?.writingDays ?? true,
-            dailyAverage: visibility?.dailyAverage ?? true
+            dailyAverage: visibility?.dailyAverage ?? true,
+            currentFile: visibility?.currentFile ?? true
         };
 
-        const hasVisibleStats = settings.todayWords || settings.totalWords || settings.completion || settings.writingDays || settings.dailyAverage;
-        if (!settings.enabled || !hasVisibleStats) {
+        const order = sanitizeLeftPaneStatOrder(visibility?.order);
+        const isVisible = (key: LeftPaneStatKey) => vis[LEFT_PANE_STAT_VISIBILITY_FIELD[key]];
+        if (!enabled || !order.some(isVisible)) {
             return;
         }
+        if (!this.currentBook) return;
+        const book = this.currentBook;
 
         const statsContainer = container.createDiv({ cls: 'book-smith-stats' });
-        if (!this.currentBook) return;
 
-        // Today's word count
-        if (settings.todayWords) {
-            const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
-            const todayValue = this.getDisplayedTodayValue(today);
-            const todayWords = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-            const todayWordsLabel = todayWords.createSpan();
-            setIcon(todayWordsLabel, 'pencil');
-            todayWordsLabel.appendChild(createSpan({ text: ` ${this.getMetricLabel('today', metricMode)}` }));
-            todayWords.createEl('span', {
-                cls: 'book-smith-stat-value',
-                text: this.getTodayStatDisplayText(todayValue, metricMode, wordsPerPage)
-            });
-        }
+        // One render closure per stat, dispatched in the user's chosen order.
+        const renderers: Record<LeftPaneStatKey, () => void> = {
+            today: () => {
+                const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
+                const todayValue = this.getDisplayedTodayValue(today);
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'pencil');
+                label.appendChild(createSpan({ text: ` ${this.getMetricLabel('today', metricMode)}` }));
+                item.createEl('span', {
+                    cls: 'book-smith-stat-value',
+                    text: this.getTodayStatDisplayText(todayValue, metricMode, wordsPerPage)
+                });
+            },
+            currentFile: () => {
+                // Word/page count of the active file only — but only when that
+                // file lives under the BookSmith book root. Files outside our
+                // folders stay at 0. Read straight from the open editor (sync).
+                const activeFile = this.app.workspace.getActiveFile();
+                const root = this.plugin.settings.defaultBookPath;
+                const inBookFolder = !!(activeFile && root
+                    && (activeFile.path === root || activeFile.path.startsWith(root + '/')));
+                const content = inBookFolder ? (this.app.workspace.activeEditor?.editor?.getValue() ?? '') : '';
+                const words = content ? this.plugin.statsManager.countWords(content) : 0;
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'file-text');
+                label.appendChild(createSpan({ text: ' Current file' }));
+                item.createEl('span', {
+                    cls: 'book-smith-stat-value',
+                    text: this.getMetricDisplayText(words, metricMode, wordsPerPage)
+                });
+            },
+            total: () => {
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'document');
+                label.appendChild(createSpan({ text: ` ${this.getMetricLabel('total', metricMode)}` }));
+                const totalValue = this.getMetricValueText(book.stats.total_words, metricMode, wordsPerPage);
+                const targetValue = book.stats.target_total_words
+                    ? this.getMetricValueText(book.stats.target_total_words, metricMode, wordsPerPage)
+                    : '';
+                const unitText = this.getMetricUnitText(metricMode);
+                item.createEl('span', {
+                    cls: 'book-smith-stat-value',
+                    text: `${totalValue}${unitText}${book.stats.target_total_words ? ` / ${targetValue}${unitText}` : ''}`
+                });
+            },
+            completion: () => {
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'target');
+                label.appendChild(createSpan({ text: ` ${i18n.t('CHAPTER_COMPLETION')}` }));
+                const targetWords = book.stats.target_total_words || 0;
+                const totalWords = book.stats.total_words || 0;
+                const completionPercent = targetWords > 0
+                    ? Math.round(Math.min(100, (totalWords / targetWords) * 100))
+                    : Math.round((book.stats.progress_by_chapter || 0) * 100);
+                item.createEl('span', { cls: 'book-smith-stat-value', text: `${completionPercent}%` });
+            },
+            writingDays: () => {
+                const writingDaysValue = this.getDisplayedWritingDays();
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'clock');
+                label.appendChild(createSpan({ text: ` ${i18n.t('WRITING_DAYS')}` }));
+                item.createEl('span', { cls: 'book-smith-stat-value', text: `${writingDaysValue}${i18n.t('DAY_UNIT')}` });
+            },
+            dailyAverage: () => {
+                const averageValue = this.getDisplayedDailyAverage();
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'calendar-clock');
+                label.appendChild(createSpan({ text: ` ${this.getMetricLabel('average', metricMode)}` }));
+                item.createEl('span', {
+                    cls: 'book-smith-stat-value',
+                    text: this.getMetricDisplayText(averageValue, metricMode, wordsPerPage)
+                });
+            }
+        };
 
-        // Total word count
-        if (settings.totalWords) {
-            const wordCount = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-            const wordCountLabel = wordCount.createSpan();
-            setIcon(wordCountLabel, 'document');
-            wordCountLabel.appendChild(createSpan({ text: ` ${this.getMetricLabel('total', metricMode)}` }));
-            const totalValue = this.getMetricValueText(this.currentBook.stats.total_words, metricMode, wordsPerPage);
-            const targetValue = this.currentBook.stats.target_total_words
-                ? this.getMetricValueText(this.currentBook.stats.target_total_words, metricMode, wordsPerPage)
-                : '';
-            const unitText = this.getMetricUnitText(metricMode);
-            wordCount.createEl('span', {
-                cls: 'book-smith-stat-value',
-                text: `${totalValue}${unitText}${this.currentBook.stats.target_total_words
-                    ? ` / ${targetValue}${unitText}`
-                    : ''
-                    }`
-            });
-        }
-
-        // Writing progress
-        if (settings.completion) {
-            const progress = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-            const progressLabel = progress.createSpan();
-            setIcon(progressLabel, 'target');
-            progressLabel.appendChild(createSpan({ text: ` ${i18n.t('CHAPTER_COMPLETION')}` }));
-
-            const targetWords = this.currentBook.stats.target_total_words || 0;
-            const totalWords = this.currentBook.stats.total_words || 0;
-            const completionPercent = targetWords > 0
-                ? Math.round(Math.min(100, (totalWords / targetWords) * 100))
-                : Math.round((this.currentBook.stats.progress_by_chapter || 0) * 100);
-
-            progress.createEl('span', {
-                cls: 'book-smith-stat-value',
-                text: `${completionPercent}%`
-            });
-        }
-
-        // Writing days
-        if (settings.writingDays) {
-            const writingDaysValue = this.getDisplayedWritingDays();
-            const duration = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-            const durationLabel = duration.createSpan();
-            setIcon(durationLabel, 'clock');
-            durationLabel.appendChild(createSpan({ text: ` ${i18n.t('WRITING_DAYS')}` }));
-            duration.createEl('span', {
-                cls: 'book-smith-stat-value',
-                text: `${writingDaysValue}${i18n.t('DAY_UNIT')}`
-            });
-        }
-
-        // Average daily words
-        if (settings.dailyAverage) {
-            const averageValue = this.getDisplayedDailyAverage();
-            const average = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-            const averageLabel = average.createSpan();
-            setIcon(averageLabel, 'calendar-clock');
-            averageLabel.appendChild(createSpan({ text: ` ${this.getMetricLabel('average', metricMode)}` }));
-            average.createEl('span', {
-                cls: 'book-smith-stat-value',
-                text: this.getMetricDisplayText(averageValue, metricMode, wordsPerPage)
-            });
+        for (const key of order) {
+            if (isVisible(key)) renderers[key]();
         }
     }
 
@@ -859,6 +869,44 @@ export class BookSmithView extends ItemView {
      * via SceneNotesManager's findBookForFile (walks upward from the file
      * looking for book-config.json).
      */
+    /**
+     * Called on every file-open. When the auto-switch setting is on and the
+     * opened file belongs to a different project, switch the left pane to it.
+     * Otherwise just refresh the corner "jump" button's visibility.
+     */
+    private async handleActiveFileProjectSync() {
+        if (this.plugin.settings.autoSwitchProjectOnFileOpen !== false) {
+            const switched = await this.maybeAutoSwitchToActiveFileProject();
+            // A switch re-renders the whole view (which updates the jump button
+            // and stats), so there's nothing left to do this pass.
+            if (switched) return;
+        }
+        await this.updateJumpToProjectButtonVisibility();
+        // Re-render the bottom-left stats so the "Current file" metric tracks
+        // the newly active file (no project switch happened).
+        this.renderStats(this.containerEl.children[1] as HTMLElement);
+    }
+
+    /**
+     * Switch the left pane to the active file's owning project when it differs
+     * from the current one. Returns true if a switch actually happened. Guarded
+     * against rapid file changes so a slow owner-lookup can't switch us to a
+     * book the user already navigated away from.
+     */
+    private async maybeAutoSwitchToActiveFileProject(): Promise<boolean> {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) return false;
+        const startPath = activeFile.path;
+        const owner = await this.plugin.sceneNotesManager.findBookForFile(activeFile.path);
+        // Discard if the user moved to another file while we were resolving.
+        if ((this.app.workspace.getActiveFile()?.path ?? null) !== startPath) return false;
+        if (!owner || owner.uuid === this.currentBook?.basic.uuid) return false;
+        this.plugin.settings.lastBookId = owner.uuid;
+        await this.plugin.saveSettings();
+        await this.refreshView();
+        return true;
+    }
+
     private async switchToActiveFileProject() {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {

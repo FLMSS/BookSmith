@@ -99,7 +99,15 @@ export class BookSmithSettingTab extends PluginSettingTab {
                 );
             });
 
-
+        new Setting(containerEl)
+            .setName('Auto-switch project on file open')
+            .setDesc('When you open a file that belongs to a different project, automatically switch the left pane to that project. Turn off to switch manually with the corner button.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoSwitchProjectOnFileOpen !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.autoSwitchProjectOnFileOpen = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 
     private renderTemplateSettings(containerEl: HTMLElement): void {

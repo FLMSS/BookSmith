@@ -74,29 +74,16 @@
 }
 
 /*
- * The gutter is pulled out of flow (absolute, anchored to .cm-sizer) and
- * placed just past the right edge of the text column. Two layouts need
- * different anchors:
- *
- *  - PROSE (default): Obsidian's readable-line-width centres `.cm-content`
- *    inside a full-width `.cm-sizer`, so the text column's right edge is at
- *    `100% - (100% - var(--file-line-width)) / 2`. We anchor with `right` to
- *    sit a few ch past that edge. (The old `left: 100%` rule planted the flag
- *    at the FULL sizer/editor edge — far out in the prose margin — which is
- *    the bug this fixes.)
- *
- *  - FOUNTAIN (`.fountain` cssclass, below): the monospace screenplay fills
- *    the whole sizer width with its text column, so its right edge is just
- *    `100%`. Kept EXACTLY as before via the override rule.
+ * The gutter is pulled out of flow (absolute) and planted just past the right
+ * edge of the text column, in the margin.
+ *   - Fountain: nearest positioned ancestor is `.cm-sizer` (its monospace text
+ *     fills the full sizer width), so `left: calc(100% + 3ch)` is 3ch past the
+ *     text's right edge.
  */
 .cm-gutters:has(.book-smith-scene-notes-gutter) {
     position: absolute !important;
-    /* CM6 defaults `.cm-gutters` to `left: 0`; cancel it so `right` wins. */
-    left: auto !important;
-    /* Right edge of the centred prose column + ~3ch breathing room. Floored
-       so it never slides off-screen when the pane is narrower than the
-       readable width. */
-    right: max(4px, calc((100% - var(--file-line-width, 700px)) / 2 - 22px - 3ch)) !important;
+    left: calc(100% + 3ch) !important;
+    right: auto !important;
     top: 0;
     bottom: 0;
     width: 22px;
@@ -105,9 +92,16 @@
     border: none;
 }
 
-/* Fountain: text column == full sizer width, so anchor at 100% as before. */
-.fountain .cm-gutters:has(.book-smith-scene-notes-gutter) {
-    left: calc(100% + 3ch) !important;
+/*
+ * Prose anchors to `.cm-contentContainer` (the vertical fix), which shrink-
+ * wraps the text — its right edge sits a little past the longest line, with a
+ * thin margin before the scrollbar that's narrower than the flag. So we plant
+ * the flag's LEFT edge just inside the container's right edge (`100% - 8px`):
+ * that lands in the right padding past the text, with the flag body extending
+ * into the margin — clear of both the glyphs and the scrollbar.
+ */
+.markdown-source-view:not(.fountain) .cm-gutters:has(.book-smith-scene-notes-gutter) {
+    left: calc(100% - 8px) !important;
     right: auto !important;
 }
 .book-smith-scene-note-marker {

@@ -31,6 +31,13 @@ export interface BookSmithSettings {
     manageBooksCompact?: boolean;
 
     /**
+     * When you open a file that belongs to a different BookSmith project, auto-
+     * switch the left pane to that project (instead of only showing the manual
+     * "switch" button). Default on.
+     */
+    autoSwitchProjectOnFileOpen?: boolean;
+
+    /**
      * When a scene note is clicked in the panel, briefly glow its anchored
      * paragraph purple in any editor where it's currently visible (no
      * scrolling/moving). Default on.
@@ -110,9 +117,58 @@ export interface BookSmithSettings {
             completion: boolean;
             writingDays: boolean;
             dailyAverage: boolean;
+            /** Word/page count of the currently active file only. */
+            currentFile: boolean;
+            /** Display order of the stat rows (keys from LEFT_PANE_STAT_KEYS). */
+            order: string[];
             writingSchedule: LeftPaneWritingScheduleSettings;
         };
     };
+}
+
+/** Stat rows shown in the bottom-left info block, in default order. */
+export const LEFT_PANE_STAT_KEYS = ['today', 'currentFile', 'total', 'completion', 'writingDays', 'dailyAverage'] as const;
+export type LeftPaneStatKey = (typeof LEFT_PANE_STAT_KEYS)[number];
+
+/** Maps each stat key to its visibility flag on `bookView.leftPanelInfo`. */
+export const LEFT_PANE_STAT_VISIBILITY_FIELD: Record<LeftPaneStatKey, 'todayWords' | 'currentFile' | 'totalWords' | 'completion' | 'writingDays' | 'dailyAverage'> = {
+    today: 'todayWords',
+    currentFile: 'currentFile',
+    total: 'totalWords',
+    completion: 'completion',
+    writingDays: 'writingDays',
+    dailyAverage: 'dailyAverage'
+};
+
+/** Short labels for the settings list / reorder UI. */
+export const LEFT_PANE_STAT_LABEL: Record<LeftPaneStatKey, string> = {
+    today: 'Today value',
+    currentFile: 'Current file value',
+    total: 'Total value',
+    completion: 'Completion',
+    writingDays: 'Writing days',
+    dailyAverage: 'Daily average value'
+};
+
+/**
+ * Normalize a saved order: drop unknown/duplicate keys, then append any known
+ * keys missing from the saved list (in their default position) — so adding a
+ * new stat later slots in without breaking existing saved orders.
+ */
+export function sanitizeLeftPaneStatOrder(saved?: string[]): LeftPaneStatKey[] {
+    const known = new Set<string>(LEFT_PANE_STAT_KEYS);
+    const seen = new Set<string>();
+    const result: LeftPaneStatKey[] = [];
+    for (const k of saved ?? []) {
+        if (known.has(k) && !seen.has(k)) {
+            result.push(k as LeftPaneStatKey);
+            seen.add(k);
+        }
+    }
+    for (const k of LEFT_PANE_STAT_KEYS) {
+        if (!seen.has(k)) result.push(k);
+    }
+    return result;
 }
 
 export const DEFAULT_SETTINGS: BookSmithSettings = {
@@ -120,6 +176,7 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
     defaultBookPath: 'books',
     lastBookId: '',
     manageBooksCompact: false,
+    autoSwitchProjectOnFileOpen: true,
     sceneNoteGlowOnClick: true,
     sceneNoteGlowFullRow: true,
     sceneNoteGlowMatchColor: false,
@@ -169,6 +226,8 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
             completion: true,
             writingDays: true,
             dailyAverage: true,
+            currentFile: true,
+            order: ['today', 'currentFile', 'total', 'completion', 'writingDays', 'dailyAverage'],
             writingSchedule: {
                 mode: 'specific-days',
                 selectedWeekdays: [1, 2, 3, 4, 5, 6, 0],

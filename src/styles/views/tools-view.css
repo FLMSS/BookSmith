@@ -567,31 +567,35 @@
     border-radius: 10px;
     padding: 10px;
     background: var(--background-primary-alt);
+    /* Drive the nav-row compression below off the calendar's own width. */
+    container-type: inline-size;
+    container-name: bs-stats-cal;
 }
 
+/*
+ * Flex (not grid) so the row shrinks gracefully: the month/year picker takes
+ * the middle and the Prev/Next buttons sit at the edges and can shrink. The
+ * old grid let the fit-content picker overflow its track and overlap the
+ * buttons when the pane got narrow.
+ */
 .book-smith-stats-calendar-nav {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     margin-bottom: 10px;
 }
 
 .book-smith-stats-nav-btn {
+    flex: 0 1 auto;
+    min-width: 0;
     border: 1px solid var(--background-modifier-border);
     background: var(--background-secondary);
     border-radius: 6px;
-    padding: 4px 10px;
+    padding: 4px 9px;
     cursor: pointer;
     white-space: nowrap;
-}
-
-.book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:first-child {
-    justify-self: start;
-}
-
-.book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:last-child {
-    justify-self: end;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .book-smith-stats-month-label {
@@ -600,12 +604,11 @@
 }
 
 .book-smith-stats-month-picker {
+    flex: 1 1 auto;
     display: flex;
     gap: 6px;
     justify-content: center;
     min-width: 0;
-    justify-self: center;
-    width: fit-content;
     margin: 0 4px;
 }
 
@@ -617,7 +620,8 @@
 }
 
 .book-smith-stats-month-picker .book-smith-stats-select {
-    min-width: 56px;
+    flex: 0 1 auto;
+    min-width: 0;
     color: var(--text-normal);
     border-color: var(--background-modifier-border);
     background: var(--background-secondary);
@@ -627,10 +631,40 @@
 
 .book-smith-stats-month-picker .book-smith-stats-year-trigger,
 .book-smith-stats-month-picker .book-smith-stats-year-input {
-    min-width: 62px;
-    width: 62px;
+    flex: 0 1 auto;
+    min-width: 0;
+    width: 52px;
     padding-left: 6px;
     padding-right: 6px;
+}
+
+/*
+ * Compression: when the calendar gets narrow, collapse the Prev/Next labels to
+ * arrows (font-size:0 hides the label text; the ::before glyph stays sized) and
+ * tighten gaps/padding so the month + year boxes never get overlapped.
+ */
+@container bs-stats-cal (max-width: 250px) {
+    .book-smith-stats-calendar-nav {
+        gap: 5px;
+    }
+    .book-smith-stats-month-picker {
+        gap: 4px;
+        margin: 0 2px;
+    }
+    .book-smith-stats-nav-btn {
+        font-size: 0;
+        padding: 4px 7px;
+    }
+    .book-smith-stats-nav-btn::before {
+        font-size: 14px;
+        line-height: 1;
+    }
+    .book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:first-child::before {
+        content: '\2039'; /* ‹ */
+    }
+    .book-smith-stats-calendar-nav > .book-smith-stats-nav-btn:last-child::before {
+        content: '\203A'; /* › */
+    }
 }
 
 .book-smith-stats-year-input {
