@@ -311,6 +311,13 @@
     transition: background-color 0.1s ease;
 }
 
+.book-smith-navigator-file-row.internal-link,
+.book-smith-navigator-file-row.internal-link:hover,
+.book-smith-navigator-file-row.internal-link:focus {
+    color: var(--text-normal);
+    text-decoration: none;
+}
+
 .book-smith-navigator-file-row:hover {
     background: var(--background-modifier-hover);
 }
@@ -319,10 +326,6 @@
     display: inline-flex;
     align-items: center;
     color: var(--text-muted);
-    /* Row is the hover target for Page Preview / Hover Editor; make the children
-       transparent to the mouse so the whole row is one uniform hover surface and
-       crossing the icon/name boundary doesn't fire stray mouseout events. */
-    pointer-events: none;
 }
 .book-smith-navigator-file-icon svg {
     width: 16px;
@@ -333,7 +336,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    pointer-events: none;
 }
 
 .book-smith-navigator-empty {

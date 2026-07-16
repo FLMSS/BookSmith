@@ -278,8 +278,24 @@ export class ToolView extends ItemView {
 
     private async refreshNavigatorIfVisible() {
         if (!this.isNavigatorMode) return;
+        const previousSignature = this.navigatorRenderSignature();
         await this.loadNavigatorData();
+        // Only redraw when the rendered content would actually change.
+        // This view refreshes on `layout-change`/`active-leaf-change`, and the
+        // Hover Editor popover IS a workspace leaf — opening it fires those
+        // events. Unconditionally redrawing destroyed the hovered row, which
+        // killed the popover (its targetEl left the DOM), which changed the
+        // layout again… an endless blink loop whenever Ctrl was held.
+        if (this.navigatorRenderSignature() === previousSignature) return;
         this.redrawNavigatorView();
+    }
+
+    private navigatorRenderSignature(): string {
+        return [
+            this.navigatorBook?.basic?.uuid ?? '',
+            this.navigatorFolderPath ?? '',
+            this.navigatorFiles.map((f) => f.path).join('\n')
+        ].join(' ');
     }
 
     public async enterNavigatorMode() {
@@ -382,13 +398,12 @@ export class ToolView extends ItemView {
         }
 
         this.navigatorFiles.forEach((file) => {
-            // NB: deliberately NOT an `.internal-link` with `data-href`. That
-            // makes Obsidian's core Page Preview global handler fire on every
-            // mousemove with the (rejected) sidebar view as parent, which fights
-            // our own single hover-link trigger below and makes the popover
-            // flicker. We open the preview ourselves instead.
             const row = list.createEl('a', {
-                cls: 'book-smith-navigator-file-row'
+                cls: 'book-smith-navigator-file-row internal-link',
+                attr: {
+                    href: file.path,
+                    'data-href': file.path
+                }
             });
             const icon = row.createSpan({ cls: 'book-smith-navigator-file-icon' });
             setIcon(icon, file.extension.toLowerCase() === 'pdf' ? 'file' : 'file-text');
@@ -404,14 +419,20 @@ export class ToolView extends ItemView {
             });
 
             // Ctrl/Cmd + hover opens the Page Preview / Hover Editor popover.
+            // This mirrors the left pane's ChapterTree pattern exactly, with two
+            // proven-necessary differences:
+            //  - hoverParent is a plain object, NOT this ItemView — Hover Editor
+            //    rejects a sidebar-leaf view as parent and builds no popover.
+            //  - The file list has no gap between rows (CSS), so the cursor can't
+            //    dip into dead space mid-hover and fire spurious mouseleaves.
             const hoverParent = { hoverPopover: null } as Record<string, unknown>;
             let hoveredPath: string | null = null;
-            let dbgFires = 0; // TEMP diagnostic
             const openPreview = (evt: MouseEvent) => {
-                if (!(evt.ctrlKey || evt.metaKey)) { hoveredPath = null; return; }
+                if (!(evt.ctrlKey || evt.metaKey)) {
+                    hoveredPath = null;
+                    return;
+                }
                 if (hoveredPath === file.path) return;
-                hoveredPath = file.path;
-                new Notice('[BS dbg] TRIGGER #' + (++dbgFires) + ' ' + file.name, 900); // TEMP
                 (this.app.workspace as any).trigger('hover-link', {
                     event: evt,
                     source: 'book-smith-navigator',
@@ -420,13 +441,11 @@ export class ToolView extends ItemView {
                     linktext: file.path,
                     sourcePath: this.app.workspace.getActiveFile()?.path || ''
                 });
+                hoveredPath = file.path;
             };
-            row.addEventListener('mouseenter', openPreview);
             row.addEventListener('mousemove', openPreview);
-            row.addEventListener('mouseleave', (evt: MouseEvent) => {
-                const rt = evt.relatedTarget as HTMLElement | null;
-                const desc = rt ? (rt.tagName + '.' + String(rt.getAttribute?.('class') || '').slice(0, 34)) : 'null';
-                new Notice('[BS dbg] LEAVE → ' + desc, 900); // TEMP
+            row.addEventListener('mouseenter', openPreview);
+            row.addEventListener('mouseleave', () => {
                 hoveredPath = null;
             });
         });
