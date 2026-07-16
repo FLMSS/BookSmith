@@ -295,7 +295,7 @@ export class ToolView extends ItemView {
             this.navigatorBook?.basic?.uuid ?? '',
             this.navigatorFolderPath ?? '',
             this.navigatorFiles.map((f) => f.path).join('\n')
-        ].join(' ');
+        ].join(' ');
     }
 
     public async enterNavigatorMode() {
@@ -350,46 +350,32 @@ export class ToolView extends ItemView {
             this.createNormalView(this.normalView);
         });
 
-        const refreshButton = header.createEl('button', {
-            cls: 'book-smith-navigator-refresh-btn',
-            attr: { 'aria-label': i18n.t('NAVIGATOR_REFRESH') }
+        // Top-right button changes the folder this project links to. The folder
+        // is stored per book (book.navigatorFolder) and the navigator always
+        // follows the plugin's current project (lastBookId), so the project name
+        // and folder path don't need to take up space in the pane — the current
+        // path lives in this button's tooltip instead.
+        const folderButton = header.createEl('button', {
+            cls: 'book-smith-navigator-folder-btn',
+            attr: {
+                'aria-label': this.navigatorFolderPath
+                    ? `${i18n.t('SELECT_FOLDER')} — ${this.navigatorFolderPath}`
+                    : i18n.t('SELECT_FOLDER')
+            }
         });
-        setIcon(refreshButton, 'refresh-cw');
-        refreshButton.addEventListener('click', async () => {
-            await this.loadNavigatorData();
-            this.redrawNavigatorView();
-        });
-
-        const titleRow = view.createDiv({ cls: 'book-smith-navigator-title-row' });
-        const titleIcon = titleRow.createSpan({ cls: 'book-smith-navigator-title-icon' });
-        setIcon(titleIcon, 'compass');
-        titleRow.createSpan({ cls: 'book-smith-navigator-title', text: i18n.t('NAVIGATOR') });
+        setIcon(folderButton, 'folder-cog');
+        folderButton.addEventListener('click', () => this.openNavigatorFolderPicker());
 
         if (!this.navigatorBook) {
+            folderButton.disabled = true;
             view.createEl('p', { cls: 'book-smith-navigator-empty', text: i18n.t('NO_ACTIVE_BOOK') });
             return;
         }
-
-        view.createEl('p', {
-            cls: 'book-smith-navigator-project-label',
-            text: `${i18n.t('SELECT_PROJECT')}: ${this.navigatorBook.basic.title}`
-        });
 
         if (!this.navigatorFolderPath) {
             this.renderNavigatorSetup(view);
             return;
         }
-
-        const folderRow = view.createDiv({ cls: 'book-smith-navigator-folder-row' });
-        folderRow.createEl('span', {
-            cls: 'book-smith-navigator-folder-path',
-            text: this.navigatorFolderPath
-        });
-        const changeButton = folderRow.createEl('button', {
-            cls: 'book-smith-navigator-change-folder-btn',
-            text: i18n.t('SELECT_FOLDER')
-        });
-        changeButton.addEventListener('click', () => this.openNavigatorFolderPicker());
 
         const list = view.createDiv({ cls: 'book-smith-navigator-file-list' });
         if (this.navigatorFiles.length === 0) {
@@ -482,7 +468,7 @@ export class ToolView extends ItemView {
 
             await this.loadNavigatorData();
             this.redrawNavigatorView();
-        }).open();
+        }, this.navigatorFolderPath).open();
     }
 
     public redrawNavigatorView() {

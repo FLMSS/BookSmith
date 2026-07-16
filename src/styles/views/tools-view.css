@@ -184,6 +184,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .book-smith-navigator-back-btn {
@@ -202,8 +205,8 @@
     background: var(--background-modifier-hover);
 }
 
-/* Square 28×28 action buttons (refresh, etc.) — Statistics style. */
-.book-smith-navigator-refresh-btn {
+/* Square 28×28 top-right action button (change folder) — Statistics style. */
+.book-smith-navigator-folder-btn {
     margin-left: auto;
     width: 28px;
     height: 28px;
@@ -217,60 +220,16 @@
     cursor: pointer;
     transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.book-smith-navigator-refresh-btn:hover {
+.book-smith-navigator-folder-btn:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
 }
-
-/* Clean section title — neutral, with a hairline separator under it. */
-.book-smith-navigator-title-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 0 8px 0;
-    border-bottom: 1px solid var(--background-modifier-border);
-    color: var(--text-normal);
-    background: none;
-    border-radius: 0;
+.book-smith-navigator-folder-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 
-.book-smith-navigator-title-icon {
-    display: inline-flex;
-    align-items: center;
-    color: var(--text-muted);
-}
-.book-smith-navigator-title-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.book-smith-navigator-title {
-    font-weight: 600;
-    font-size: 1.02rem;
-}
-
-.book-smith-navigator-project-label,
-.book-smith-navigator-folder-path {
-    color: var(--text-muted);
-    font-size: 0.9em;
-}
-
-.book-smith-navigator-folder-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.book-smith-navigator-folder-path {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.book-smith-navigator-change-folder-btn,
+/* CTA button shown in the empty state when no folder is linked yet. */
 .book-smith-navigator-select-btn {
     border: 1px solid var(--background-modifier-border);
     border-radius: 6px;
@@ -280,7 +239,6 @@
     padding: 5px 10px;
     transition: background-color 0.12s ease, border-color 0.12s ease;
 }
-.book-smith-navigator-change-folder-btn:hover,
 .book-smith-navigator-select-btn:hover {
     background: var(--background-modifier-hover);
 }
