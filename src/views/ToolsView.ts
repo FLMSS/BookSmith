@@ -382,12 +382,13 @@ export class ToolView extends ItemView {
         }
 
         this.navigatorFiles.forEach((file) => {
+            // NB: deliberately NOT an `.internal-link` with `data-href`. That
+            // makes Obsidian's core Page Preview global handler fire on every
+            // mousemove with the (rejected) sidebar view as parent, which fights
+            // our own single hover-link trigger below and makes the popover
+            // flicker. We open the preview ourselves instead.
             const row = list.createEl('a', {
-                cls: 'book-smith-navigator-file-row internal-link',
-                attr: {
-                    href: file.path,
-                    'data-href': file.path
-                }
+                cls: 'book-smith-navigator-file-row'
             });
             const icon = row.createSpan({ cls: 'book-smith-navigator-file-icon' });
             setIcon(icon, file.extension.toLowerCase() === 'pdf' ? 'file' : 'file-text');
@@ -402,30 +403,31 @@ export class ToolView extends ItemView {
                 await this.app.workspace.getLeaf(openInNewTab).openFile(file);
             });
 
-            const triggerHoverPreview = (evt: MouseEvent) => {
-                const isMod = evt.ctrlKey || evt.metaKey;
-                if (!isMod) {
-                    this.navigatorHoverTriggeredPath = null;
-                    return;
-                }
-                if (this.navigatorHoverTriggeredPath === file.path) return;
-
-                const sourcePath = this.app.workspace.getActiveFile()?.path || '';
+            // Ctrl/Cmd + hover opens the Page Preview / Hover Editor popover.
+            const hoverParent = { hoverPopover: null } as Record<string, unknown>;
+            let hoveredPath: string | null = null;
+            let dbgFires = 0; // TEMP diagnostic
+            const openPreview = (evt: MouseEvent) => {
+                if (!(evt.ctrlKey || evt.metaKey)) { hoveredPath = null; return; }
+                if (hoveredPath === file.path) return;
+                hoveredPath = file.path;
+                new Notice('[BS dbg] TRIGGER #' + (++dbgFires) + ' ' + file.name, 900); // TEMP
                 (this.app.workspace as any).trigger('hover-link', {
                     event: evt,
                     source: 'book-smith-navigator',
-                    hoverParent: this,
+                    hoverParent,
                     targetEl: row,
                     linktext: file.path,
-                    sourcePath
+                    sourcePath: this.app.workspace.getActiveFile()?.path || ''
                 });
-                this.navigatorHoverTriggeredPath = file.path;
             };
-
-            row.addEventListener('mousemove', triggerHoverPreview);
-            row.addEventListener('mouseenter', triggerHoverPreview);
-            row.addEventListener('mouseleave', () => {
-                this.navigatorHoverTriggeredPath = null;
+            row.addEventListener('mouseenter', openPreview);
+            row.addEventListener('mousemove', openPreview);
+            row.addEventListener('mouseleave', (evt: MouseEvent) => {
+                const rt = evt.relatedTarget as HTMLElement | null;
+                const desc = rt ? (rt.tagName + '.' + String(rt.getAttribute?.('class') || '').slice(0, 34)) : 'null';
+                new Notice('[BS dbg] LEAVE → ' + desc, 900); // TEMP
+                hoveredPath = null;
             });
         });
     }
