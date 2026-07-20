@@ -184,6 +184,9 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .book-smith-navigator-back-btn {
@@ -202,8 +205,8 @@
     background: var(--background-modifier-hover);
 }
 
-/* Square 28×28 action buttons (refresh, etc.) — Statistics style. */
-.book-smith-navigator-refresh-btn {
+/* Square 28×28 top-right action button (change folder) — Statistics style. */
+.book-smith-navigator-folder-btn {
     margin-left: auto;
     width: 28px;
     height: 28px;
@@ -217,60 +220,16 @@
     cursor: pointer;
     transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.book-smith-navigator-refresh-btn:hover {
+.book-smith-navigator-folder-btn:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
 }
-
-/* Clean section title — neutral, with a hairline separator under it. */
-.book-smith-navigator-title-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 0 8px 0;
-    border-bottom: 1px solid var(--background-modifier-border);
-    color: var(--text-normal);
-    background: none;
-    border-radius: 0;
+.book-smith-navigator-folder-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 
-.book-smith-navigator-title-icon {
-    display: inline-flex;
-    align-items: center;
-    color: var(--text-muted);
-}
-.book-smith-navigator-title-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.book-smith-navigator-title {
-    font-weight: 600;
-    font-size: 1.02rem;
-}
-
-.book-smith-navigator-project-label,
-.book-smith-navigator-folder-path {
-    color: var(--text-muted);
-    font-size: 0.9em;
-}
-
-.book-smith-navigator-folder-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.book-smith-navigator-folder-path {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.book-smith-navigator-change-folder-btn,
+/* CTA button shown in the empty state when no folder is linked yet. */
 .book-smith-navigator-select-btn {
     border: 1px solid var(--background-modifier-border);
     border-radius: 6px;
@@ -280,7 +239,6 @@
     padding: 5px 10px;
     transition: background-color 0.12s ease, border-color 0.12s ease;
 }
-.book-smith-navigator-change-folder-btn:hover,
 .book-smith-navigator-select-btn:hover {
     background: var(--background-modifier-hover);
 }
@@ -289,7 +247,10 @@
 .book-smith-navigator-file-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    /* No gap: rows must tile with no dead space between them, otherwise the
+       cursor dips into the gap while hovering and the Ctrl+hover popover
+       flickers (leave → Hover Editor hides → re-enter → re-trigger). */
+    gap: 0;
 }
 
 .book-smith-navigator-file-row {
@@ -542,6 +503,13 @@
 .book-smith-stats-settings-row label {
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.book-smith-stats-settings-toggle {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    cursor: pointer;
 }
 
 .book-smith-stats-settings-input {
@@ -819,6 +787,135 @@
 }
 
 .book-smith-stats-day.has-words {
+    border-color: var(--interactive-accent);
+}
+
+/* Day list view — one compact row per writing-period day. */
+.book-smith-stats-day-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.book-smith-stats-day-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    /* Lets the optional comment preview wrap onto its own full-width line. */
+    flex-wrap: wrap;
+}
+
+/* One-line comment preview under the date/value line. */
+.book-smith-stats-day-list-comment {
+    flex-basis: 100%;
+    color: var(--text-faint);
+    font-size: 0.82em;
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.book-smith-stats-day-list-row.is-selected .book-smith-stats-day-list-comment {
+    color: var(--text-on-accent);
+    opacity: 0.85;
+}
+.book-smith-stats-day-list-row:hover {
+    background: var(--background-modifier-hover);
+}
+.book-smith-stats-day-list-row.is-selected {
+    background: var(--interactive-accent-hover);
+}
+.book-smith-stats-day-list-row.is-selected .book-smith-stats-day-list-date,
+.book-smith-stats-day-list-row.is-selected .book-smith-stats-day-list-value {
+    color: var(--text-on-accent);
+}
+.book-smith-stats-day-list-row.has-comment .book-smith-stats-day-list-date::after {
+    content: '•';
+    margin-left: 4px;
+    color: var(--interactive-accent);
+}
+.book-smith-stats-day-list-date {
+    color: var(--text-normal);
+    font-size: 0.92em;
+}
+.book-smith-stats-day-list-value {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.92em;
+}
+.book-smith-stats-day-list-value.progress-purple {
+    color: var(--interactive-accent);
+}
+.book-smith-stats-day-list-value.progress-negative {
+    color: var(--color-red, #e03131);
+}
+/* Timeline: taller scroll area + sticky month separators. */
+.book-smith-stats-day-list.is-timeline {
+    max-height: 420px;
+}
+.book-smith-stats-timeline-month {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 6px 8px 4px;
+    background: var(--background-primary-alt);
+    color: var(--text-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Quota list: a missed weekly slot (you owed this day a writing session). */
+.book-smith-stats-day-list-row.is-missed .book-smith-stats-day-list-date {
+    color: var(--text-muted);
+}
+.book-smith-stats-day-list-empty {
+    color: var(--text-muted);
+    margin: 4px 0;
+    font-size: 0.9em;
+}
+
+/* Streak view: a green chain replaces the standard accent coloring. Written
+   days are full green, non-writing days inside a live chain are a lighter
+   green (so the chain reads as a continuous band), and the week that breaks
+   an active chain goes red. Written amounts stay visible per the progress
+   mode. --bs-streak-green / --bs-streak-red keep the two hues in one place. */
+.book-smith-stats-grid.is-streak-view {
+    --bs-streak-green: var(--color-green, #2f9e44);
+    --bs-streak-red: var(--color-red, #e03131);
+}
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.has-words {
+    border-color: var(--background-modifier-border);
+}
+/* Full green — you wrote that day. */
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-streak-day {
+    background: color-mix(in srgb, var(--bs-streak-green) 24%, var(--background-secondary));
+    border-color: color-mix(in srgb, var(--bs-streak-green) 60%, var(--background-modifier-border));
+}
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-streak-day .book-smith-stats-day-words {
+    color: var(--bs-streak-green);
+}
+/* Light green — chain-alive gap day (no writing, but the week held). */
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-streak-fill {
+    background: color-mix(in srgb, var(--bs-streak-green) 9%, var(--background-secondary));
+    border-color: color-mix(in srgb, var(--bs-streak-green) 24%, var(--background-modifier-border));
+}
+/* Red — the week that broke an active chain. */
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-streak-broken {
+    background: color-mix(in srgb, var(--bs-streak-red) 15%, var(--background-secondary));
+    border-color: color-mix(in srgb, var(--bs-streak-red) 45%, var(--background-modifier-border));
+}
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-streak-broken .book-smith-stats-day-words {
+    color: var(--bs-streak-red);
+}
+.book-smith-stats-grid.is-streak-view .book-smith-stats-day.is-selected {
+    background: var(--interactive-accent-hover);
     border-color: var(--interactive-accent);
 }
 

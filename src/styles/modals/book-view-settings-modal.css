@@ -281,3 +281,12 @@
     color: var(--text-muted);
     font-size: 0.86em;
 }
+
+/* Computed per-period history line at the bottom of an expanded card. */
+.book-smith-period-performance {
+    margin: 8px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.86em;
+}

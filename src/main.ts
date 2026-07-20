@@ -144,6 +144,18 @@ export default class BookSmithPlugin extends Plugin {
         );
         this.registerView('book-smith-tool', (leaf) => new ToolView(leaf, this));
 
+        // Register our custom link sources with the core Page Preview plugin so
+        // Ctrl/Cmd+hover over links in our panels opens the hover editor.
+        // defaultMod: true = require the modifier key (matches the left panel).
+        (this as any).registerHoverLinkSource?.('book-smith-navigator', {
+            display: 'Book Smith Navigator',
+            defaultMod: true
+        });
+        (this as any).registerHoverLinkSource?.('book-smith-chapter-tree', {
+            display: 'Book Smith Chapters',
+            defaultMod: true
+        });
+
         // 添加设置选项卡
         this.addSettingTab(new BookSmithSettingTab(this.app, this));
 
@@ -310,17 +322,7 @@ export default class BookSmithPlugin extends Plugin {
                 ...(savedSettings?.bookView || {}),
                 leftPanelInfo: {
                     ...DEFAULT_SETTINGS.bookView.leftPanelInfo,
-                    ...(savedSettings?.bookView?.leftPanelInfo || {}),
-                    writingSchedule: {
-                        ...DEFAULT_SETTINGS.bookView.leftPanelInfo.writingSchedule,
-                        ...(savedSettings?.bookView?.leftPanelInfo?.writingSchedule || {}),
-                        scheduleHistory: (
-                            savedSettings?.bookView?.leftPanelInfo?.writingSchedule?.scheduleHistory &&
-                            savedSettings.bookView.leftPanelInfo.writingSchedule.scheduleHistory.length > 0
-                        )
-                            ? savedSettings.bookView.leftPanelInfo.writingSchedule.scheduleHistory
-                            : DEFAULT_SETTINGS.bookView.leftPanelInfo.writingSchedule.scheduleHistory
-                    }
+                    ...(savedSettings?.bookView?.leftPanelInfo || {})
                 }
             }
         };

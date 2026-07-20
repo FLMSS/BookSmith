@@ -2,21 +2,6 @@ import { defaultTemplate } from '../templates/prose';
 import { screenplayTemplate } from '../templates/screenplay';
 import { ChapterTree } from '../types/book';
 
-export interface LeftPaneWritingScheduleSnapshot {
-    effectiveFrom: string;
-    mode: 'specific-days' | 'days-per-week';
-    selectedWeekdays: number[];
-    daysPerWeek: number;
-}
-
-export interface LeftPaneWritingScheduleSettings {
-    mode: 'specific-days' | 'days-per-week';
-    selectedWeekdays: number[];
-    daysPerWeek: number;
-    averageMissedScheduledDays: boolean;
-    averageWindowDays: number;
-    scheduleHistory: LeftPaneWritingScheduleSnapshot[];
-}
 export interface BookSmithSettings {
     // 基础配置
     defaultAuthor: string;
@@ -105,6 +90,23 @@ export interface BookSmithSettings {
         writingDisplayMode: 'new-material-net' | 'daily-output' | 'raw';
         leftPaneWritingDisplayMode?: 'new-material-net' | 'daily-output' | 'raw';
         wordsPerPage: number;
+        /** Right-pane day calendar: standard word coloring, or green streak-chain view. */
+        calendarView?: 'standard' | 'streak';
+        /** Day-period layout: 'calendar' or 'list'. ('quota'/'timeline' are
+         *  legacy values, now expressed as list + the two flags below.) */
+        dailyView?: 'calendar' | 'list' | 'quota' | 'timeline';
+        /** List: infinite scroll across all history (vs. the visible month). */
+        listInfinite?: boolean;
+        /** List: show only quota days (written + one zero row per missed slot). */
+        listWritingDaysOnly?: boolean;
+        /** Show a one-line comment preview on list rows. Default on. */
+        listCommentPreview?: boolean;
+        /** Timeline ordering:
+         *  'newest'     — fully descending (today first, days count down).
+         *  'oldest'     — fully ascending (earliest day first, count up).
+         *  'month-desc' — latest month first, but days ascending within each
+         *                 month (JULY 1,2,3…, then JUNE 1,2,3…). */
+        timelineOrder?: 'newest' | 'oldest' | 'month-desc';
     };
 
     // Book view display preferences
@@ -119,25 +121,42 @@ export interface BookSmithSettings {
             dailyAverage: boolean;
             /** Word/page count of the currently active file only. */
             currentFile: boolean;
+            /** Consecutive kept writing weeks (per the active period's schedule + threshold). */
+            streak: boolean;
+            /** How the streak stat renders: kept weeks, or writing days in the chain. */
+            streakUnit?: 'weeks' | 'days';
             /** Display order of the stat rows (keys from LEFT_PANE_STAT_KEYS). */
             order: string[];
-            writingSchedule: LeftPaneWritingScheduleSettings;
         };
     };
 }
 
-/** Stat rows shown in the bottom-left info block, in default order. */
-export const LEFT_PANE_STAT_KEYS = ['today', 'currentFile', 'total', 'completion', 'writingDays', 'dailyAverage'] as const;
+/** Stat rows shown in the bottom-left info block, in default order.
+ *  Streak replaces Writing days in the default view; Writing days stays
+ *  available but is hidden by default. */
+export const LEFT_PANE_STAT_KEYS = ['today', 'currentFile', 'total', 'completion', 'streak', 'writingDays', 'dailyAverage'] as const;
 export type LeftPaneStatKey = (typeof LEFT_PANE_STAT_KEYS)[number];
 
 /** Maps each stat key to its visibility flag on `bookView.leftPanelInfo`. */
-export const LEFT_PANE_STAT_VISIBILITY_FIELD: Record<LeftPaneStatKey, 'todayWords' | 'currentFile' | 'totalWords' | 'completion' | 'writingDays' | 'dailyAverage'> = {
+export const LEFT_PANE_STAT_VISIBILITY_FIELD: Record<LeftPaneStatKey, 'todayWords' | 'currentFile' | 'totalWords' | 'completion' | 'streak' | 'writingDays' | 'dailyAverage'> = {
     today: 'todayWords',
     currentFile: 'currentFile',
     total: 'totalWords',
     completion: 'completion',
+    streak: 'streak',
     writingDays: 'writingDays',
     dailyAverage: 'dailyAverage'
+};
+
+/** Default visibility per stat key (used by renderers and the reset button). */
+export const LEFT_PANE_STAT_DEFAULT_VISIBLE: Record<LeftPaneStatKey, boolean> = {
+    today: true,
+    currentFile: true,
+    total: true,
+    completion: true,
+    streak: true,
+    writingDays: false,
+    dailyAverage: true
 };
 
 /** Short labels for the settings list / reorder UI. */
@@ -146,6 +165,7 @@ export const LEFT_PANE_STAT_LABEL: Record<LeftPaneStatKey, string> = {
     currentFile: 'Current file value',
     total: 'Total value',
     completion: 'Completion',
+    streak: 'Writing streak',
     writingDays: 'Writing days',
     dailyAverage: 'Daily average value'
 };
@@ -215,7 +235,13 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
         displayMode: 'words',
         writingDisplayMode: 'new-material-net',
         leftPaneWritingDisplayMode: 'daily-output',
-        wordsPerPage: 250
+        wordsPerPage: 250,
+        calendarView: 'standard',
+        dailyView: 'calendar',
+        listInfinite: false,
+        listWritingDaysOnly: false,
+        listCommentPreview: true,
+        timelineOrder: 'newest'
     },
     bookView: {
         leftPanelInfo: {
@@ -224,25 +250,12 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
             todayWords: true,
             totalWords: true,
             completion: true,
-            writingDays: true,
+            writingDays: false,
             dailyAverage: true,
             currentFile: true,
-            order: ['today', 'currentFile', 'total', 'completion', 'writingDays', 'dailyAverage'],
-            writingSchedule: {
-                mode: 'specific-days',
-                selectedWeekdays: [1, 2, 3, 4, 5, 6, 0],
-                daysPerWeek: 7,
-                averageMissedScheduledDays: true,
-                averageWindowDays: 0,
-                scheduleHistory: [
-                    {
-                        effectiveFrom: '1970-01-01',
-                        mode: 'specific-days',
-                        selectedWeekdays: [1, 2, 3, 4, 5, 6, 0],
-                        daysPerWeek: 7
-                    }
-                ]
-            }
+            streak: true,
+            streakUnit: 'weeks',
+            order: [...LEFT_PANE_STAT_KEYS]
         }
     }
 };

@@ -553,7 +553,10 @@
 .book-smith-scene-notes-textarea-wrap > .book-smith-scene-notes-editor-textarea {
     position: relative;
     z-index: 1;
-    background: transparent;
+    /* White field (editor background), not the gray panel behind it. The text
+       itself stays transparent — the mirror layer (z-index 2) renders it with
+       #tag / [[wikilink]] highlighting on top of this fill. */
+    background: var(--background-primary);
     color: transparent;
     caret-color: var(--text-normal);
 }

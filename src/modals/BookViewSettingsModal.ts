@@ -4,7 +4,7 @@ import { i18n } from '../i18n/i18n';
 import { Book, BookWritingPeriod } from '../types/book';
 import { NamePromptModal } from './NamePromptModal';
 import { getDailyRolloverOptions, getLogicalDayISODate, normalizeDailyRolloverMinutes } from '../utils/logicalDay';
-import { LeftPaneStatKey, LEFT_PANE_STAT_KEYS, LEFT_PANE_STAT_LABEL, LEFT_PANE_STAT_VISIBILITY_FIELD, sanitizeLeftPaneStatOrder } from '../settings/settings';
+import { LeftPaneStatKey, LEFT_PANE_STAT_KEYS, LEFT_PANE_STAT_LABEL, LEFT_PANE_STAT_VISIBILITY_FIELD, LEFT_PANE_STAT_DEFAULT_VISIBLE, sanitizeLeftPaneStatOrder } from '../settings/settings';
 
 export class BookViewSettingsModal extends Modal {
     private statsSectionExpanded = false;
@@ -12,6 +12,7 @@ export class BookViewSettingsModal extends Modal {
     private projectManagementSectionExpanded = false;
     private coverSectionExpanded = false;
     private goalSectionExpanded = false;
+    private focusSectionExpanded = false;
     private goalInputMode: 'words' | 'pages' = 'words';
     private dailyGoalInputMode: 'words' | 'pages' = 'words';
     private modeDefaultsInitialized = false;
@@ -68,6 +69,79 @@ export class BookViewSettingsModal extends Modal {
         this.renderProjectManagementSection(sectionList);
         this.renderCoverSection(sectionList);
         this.renderGoalSection(sectionList);
+        this.renderFocusModeSection(sectionList);
+        this.renderPluginSettingsLink(sectionList);
+    }
+
+    /** Global Focus mode options (moved here from the Obsidian settings tab). */
+    private renderFocusModeSection(sectionList: HTMLElement): void {
+        const section = sectionList.createDiv({ cls: 'book-smith-book-view-settings-section' });
+        const sectionHeader = section.createEl('button', {
+            cls: 'book-smith-book-view-settings-section-header',
+            attr: { type: 'button' }
+        });
+        const left = sectionHeader.createDiv({ cls: 'book-smith-book-view-settings-section-left' });
+        const chevron = left.createSpan({ cls: 'book-smith-book-view-settings-chevron' });
+        setIcon(chevron, this.focusSectionExpanded ? 'chevron-down' : 'chevron-right');
+        left.createEl('span', { text: 'Focus Mode' });
+
+        sectionHeader.addEventListener('click', () => {
+            this.focusSectionExpanded = !this.focusSectionExpanded;
+            this.onOpen();
+        });
+        if (!this.focusSectionExpanded) return;
+
+        const detail = section.createDiv({ cls: 'book-smith-book-view-settings-detail' });
+
+        new Setting(detail)
+            .setName(i18n.t('FOCUS_DURATION'))
+            .setDesc(i18n.t('FOCUS_DURATION_DESC'))
+            .addText(text => text
+                .setPlaceholder('25')
+                .setValue(this.plugin.settings.focus.workDuration.toString())
+                .onChange(async (value) => {
+                    const parsed = Number(value);
+                    const normalized = Number.isFinite(parsed) ? parsed : 25;
+                    this.plugin.settings.focus.workDuration = Math.min(75, Math.max(5, normalized));
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(detail)
+            .setName(i18n.t('BREAK_DURATION'))
+            .setDesc(i18n.t('BREAK_DURATION_DESC'))
+            .addText(text => text
+                .setPlaceholder('5')
+                .setValue(this.plugin.settings.focus.breakDuration.toString())
+                .onChange(async (value) => {
+                    this.plugin.settings.focus.breakDuration = Number(value) || 5;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(detail)
+            .setName(i18n.t('WORD_GOAL'))
+            .setDesc(i18n.t('WORD_GOAL_DESC'))
+            .addText(text => text
+                .setPlaceholder('500')
+                .setValue(this.plugin.settings.focus.wordGoal.toString())
+                .onChange(async (value) => {
+                    this.plugin.settings.focus.wordGoal = Number(value) || 500;
+                    await this.plugin.saveSettings();
+                }));
+    }
+
+    /** Shortcut to the remaining Obsidian-tab settings (Basic, Templates). */
+    private renderPluginSettingsLink(sectionList: HTMLElement): void {
+        new Setting(sectionList)
+            .setName('Plugin settings')
+            .setDesc('Author, storage path, and templates live in Obsidian’s plugin settings.')
+            .addButton(button => button
+                .setButtonText('Open plugin settings')
+                .onClick(() => {
+                    const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
+                    setting.open();
+                    setting.openTabById('book-smith-fork');
+                    this.close();
+                }));
     }
 
     private renderStatsSection(sectionList: HTMLElement): void {
@@ -145,18 +219,34 @@ export class BookViewSettingsModal extends Modal {
         });
 
         new Setting(detail)
+            .setName('Streak unit')
+            .setDesc('Show the streak as kept weeks, or as writing days in the current chain.')
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('weeks', 'Weeks')
+                    .addOption('days', 'Days')
+                    .setValue(this.plugin.settings.bookView.leftPanelInfo.streakUnit === 'days' ? 'days' : 'weeks')
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookView.leftPanelInfo.streakUnit = value === 'days' ? 'days' : 'weeks';
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        new Setting(detail)
             .addButton(btn => btn
                 .setButtonText('Reset to default order')
-                .setTooltip('Restore the original order and show all rows')
+                .setTooltip('Restore the original order and default visibility')
                 .onClick(async () => {
                     const info = this.plugin.settings.bookView.leftPanelInfo;
                     info.order = [...LEFT_PANE_STAT_KEYS];
-                    info.todayWords = true;
-                    info.currentFile = true;
-                    info.totalWords = true;
-                    info.completion = true;
-                    info.writingDays = true;
-                    info.dailyAverage = true;
+                    info.todayWords = LEFT_PANE_STAT_DEFAULT_VISIBLE.today;
+                    info.currentFile = LEFT_PANE_STAT_DEFAULT_VISIBLE.currentFile;
+                    info.totalWords = LEFT_PANE_STAT_DEFAULT_VISIBLE.total;
+                    info.completion = LEFT_PANE_STAT_DEFAULT_VISIBLE.completion;
+                    info.streak = LEFT_PANE_STAT_DEFAULT_VISIBLE.streak;
+                    info.writingDays = LEFT_PANE_STAT_DEFAULT_VISIBLE.writingDays;
+                    info.dailyAverage = LEFT_PANE_STAT_DEFAULT_VISIBLE.dailyAverage;
                     await this.plugin.saveSettings();
                     this.onSettingsChanged();
                     this.onOpen();
@@ -249,7 +339,7 @@ export class BookViewSettingsModal extends Modal {
         const left = sectionHeader.createDiv({ cls: 'book-smith-book-view-settings-section-left' });
         const chevron = left.createSpan({ cls: 'book-smith-book-view-settings-chevron' });
         setIcon(chevron, this.projectManagementSectionExpanded ? 'chevron-down' : 'chevron-right');
-        left.createEl('span', { text: 'Project Management' });
+        left.createEl('span', { text: 'Goals & Schedule' });
 
         const periodCount = this.currentBook?.stats?.writing_periods?.length || 0;
         sectionHeader.createEl('span', {
@@ -275,7 +365,7 @@ export class BookViewSettingsModal extends Modal {
 
         detail.createEl('p', {
             cls: 'book-smith-book-view-settings-desc',
-            text: 'Define named writing periods (draft, rewrite, etc.) with their own schedule and date boundaries.'
+            text: 'Project goals plus named writing periods (draft, rewrite, etc.), each with its own schedule, dates, and writing-day threshold.'
         });
 
         this.addGoalTargetSetting(detail);
@@ -354,12 +444,12 @@ export class BookViewSettingsModal extends Modal {
         const left = sectionHeader.createDiv({ cls: 'book-smith-book-view-settings-section-left' });
         const chevron = left.createSpan({ cls: 'book-smith-book-view-settings-chevron' });
         setIcon(chevron, this.goalSectionExpanded ? 'chevron-down' : 'chevron-right');
-        left.createEl('span', { text: 'Word Count Goal' });
+        left.createEl('span', { text: 'Counting & Display' });
 
-        const hasGoal = Boolean((this.currentBook?.stats?.target_total_words || 0) > 0);
+        const badgeMode = this.getInfoSettings().metricMode === 'pages' ? 'pages' : 'words';
         sectionHeader.createEl('span', {
-            cls: `book-smith-book-view-settings-badge${hasGoal ? ' is-on' : ' is-off'}`,
-            text: hasGoal ? 'Set' : 'None'
+            cls: 'book-smith-book-view-settings-badge',
+            text: badgeMode
         });
 
         sectionHeader.addEventListener('click', () => {
@@ -378,9 +468,9 @@ export class BookViewSettingsModal extends Modal {
             return;
         }
 
+        // Measurement/display rules only — goals live in "Goals & Schedule".
         this.addWritingStatsModeSetting(detail);
         this.addMetricModeSetting(detail);
-        this.addGoalTargetSetting(detail);
 
         // Add Count Comments on Word Count toggle
         new Setting(detail)
@@ -404,6 +494,39 @@ export class BookViewSettingsModal extends Modal {
 
         this.addWordsPerPageSetting(detail);
         this.addDailyRolloverSetting(detail);
+
+        // Statistics-pane list/timeline preferences (moved here from the
+        // Obsidian settings tab).
+        new Setting(detail)
+            .setName('Comment previews in day lists')
+            .setDesc('Show a one-line preview of the day’s comment on List and Timeline rows in the Statistics pane.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.stats?.listCommentPreview !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.stats.listCommentPreview = value;
+                    await this.plugin.saveSettings();
+                    this.onSettingsChanged();
+                }));
+
+        new Setting(detail)
+            .setName('Timeline order')
+            .setDesc('Newest first: today at top. Oldest first: earliest day at top. Latest month first: recent month on top but days ascending within it (July 1, 2, 3…, then June 1, 2, 3…).')
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption('newest', 'Newest first')
+                    .addOption('oldest', 'Oldest first')
+                    .addOption('month-desc', 'Latest month first, days ascending');
+                const cur = this.plugin.settings.stats?.timelineOrder;
+                dropdown.setValue(cur === 'oldest' || cur === 'month-desc' ? cur : 'newest')
+                    .onChange(async (value) => {
+                        this.plugin.settings.stats.timelineOrder =
+                            value === 'oldest' ? 'oldest'
+                                : value === 'month-desc' ? 'month-desc'
+                                    : 'newest';
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
     }
 
     private addDailyRolloverSetting(container: HTMLElement): void {
@@ -804,6 +927,54 @@ export class BookViewSettingsModal extends Modal {
             });
         }
 
+        // Streak bar: what counts as a "writing day". Always stored in words;
+        // the unit dropdown is an input aid so the minimum can be typed in
+        // either words or pages regardless of the pane's metric mode.
+        // Deliberately separate from the daily goal — under-goal days still
+        // keep the streak alive.
+        const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
+        const thresholdWords = Math.max(1, Math.round(period.writing_day_threshold_words ?? 1));
+        let thresholdUnit: 'words' | 'pages' =
+            this.getInfoSettings().metricMode === 'pages' ? 'pages' : 'words';
+        let thresholdTextEl: HTMLInputElement | null = null;
+        const thresholdDisplay = (words: number, unit: 'words' | 'pages') =>
+            unit === 'pages' ? this.formatPages(words, wordsPerPage) : String(words);
+        new Setting(card)
+            .setName('Writing day threshold')
+            .setDesc('Minimum written for a day to count toward the streak. Below your daily goal still counts.')
+            .addText((text) => {
+                thresholdTextEl = text.inputEl;
+                text.inputEl.type = 'number';
+                text.inputEl.min = '0';
+                text.setValue(thresholdDisplay(thresholdWords, thresholdUnit))
+                    .onChange(async (value) => {
+                        const parsed = Number(value);
+                        if (!Number.isFinite(parsed) || parsed < 0) return;
+                        const words = thresholdUnit === 'pages'
+                            ? Math.round(parsed * wordsPerPage)
+                            : Math.round(parsed);
+                        await this.updateWritingPeriod(period.id, {
+                            writing_day_threshold_words: Math.max(1, words)
+                        });
+                    });
+            })
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('words', 'words')
+                    .addOption('pages', 'pages')
+                    .setValue(thresholdUnit)
+                    .onChange((value) => {
+                        // Re-display the stored value in the newly chosen unit.
+                        thresholdUnit = value === 'pages' ? 'pages' : 'words';
+                        const stored = Math.max(1, Math.round(
+                            this.getProjectWritingPeriods().find((p) => p.id === period.id)?.writing_day_threshold_words ?? thresholdWords
+                        ));
+                        if (thresholdTextEl) {
+                            thresholdTextEl.value = thresholdDisplay(stored, thresholdUnit);
+                        }
+                    });
+            });
+
         new Setting(card)
             .setName('Count missed scheduled days as zero')
             .addToggle((toggle) => {
@@ -832,6 +1003,81 @@ export class BookViewSettingsModal extends Modal {
                         });
                     });
             });
+
+        // Read-only history line: how this period actually went.
+        const summary = this.getPeriodPerformanceSummary(period);
+        if (summary) {
+            card.createEl('p', {
+                cls: 'book-smith-period-performance',
+                text: summary
+            });
+        }
+    }
+
+    /**
+     * Computed per-period history from recorded daily progress:
+     * "avg 420 words/day · 18/21 writing days · goal hit 12 days".
+     * Writing days use the period's threshold (net words, daily-output basis);
+     * goal-hit days are measured against the current daily goal.
+     */
+    private getPeriodPerformanceSummary(period: BookWritingPeriod): string | null {
+        const stats = this.currentBook?.stats;
+        if (!stats) return null;
+
+        const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
+        const start = period.start_date;
+        const end = period.end_date && period.end_date < today ? period.end_date : today;
+        if (!start || start > end) return null;
+
+        const threshold = Math.max(1, Math.round(period.writing_day_threshold_words ?? 1));
+        const goalWords = Math.max(0, Math.round(stats.daily_goal_words || 0));
+
+        let elapsed = 0;
+        let scheduled = 0;
+        let writingDays = 0;
+        let goalHitDays = 0;
+        let totalWritten = 0;
+
+        let cursor = start;
+        while (cursor <= end && elapsed < 3660) { // ~10-year guard
+            const weekday = new Date(`${cursor}T12:00:00`).getDay();
+            const isScheduled = period.schedule.mode === 'days-per-week'
+                ? true // counted below as dpw × weeks
+                : period.schedule.selected_weekdays.includes(weekday);
+            if (isScheduled) scheduled++;
+
+            const entry = stats.daily_progress?.[cursor];
+            const value = entry
+                ? Math.max(0, entry.net_change || 0)
+                : Math.max(0, stats.daily_words?.[cursor] || 0);
+            totalWritten += value;
+            if (value >= threshold) writingDays++;
+            if (goalWords > 0 && value >= goalWords) goalHitDays++;
+
+            elapsed++;
+            const next = new Date(`${cursor}T12:00:00`);
+            next.setDate(next.getDate() + 1);
+            cursor = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+        }
+        if (elapsed === 0) return null;
+
+        if (period.schedule.mode === 'days-per-week') {
+            scheduled = Math.round((period.schedule.days_per_week / 7) * elapsed);
+        }
+
+        const metricMode = this.getInfoSettings().metricMode === 'pages' ? 'pages' : 'words';
+        const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
+        const avgWords = totalWritten / elapsed;
+        const avgText = metricMode === 'pages'
+            ? `${this.formatPages(Math.round(avgWords), wordsPerPage)} pages/day`
+            : `${Math.round(avgWords)} words/day`;
+
+        const parts = [
+            `avg ${avgText}`,
+            `${writingDays}/${scheduled} writing days`
+        ];
+        if (goalWords > 0) parts.push(`goal hit ${goalHitDays} day${goalHitDays === 1 ? '' : 's'}`);
+        return parts.join(' · ');
     }
 
     private async addWritingPeriod(): Promise<void> {
@@ -920,6 +1166,7 @@ export class BookViewSettingsModal extends Modal {
                 selected_weekdays: [0, 1, 2, 3, 4, 5, 6],
                 days_per_week: 7
             },
+            writing_day_threshold_words: 1,
             average_missed_scheduled_days: true,
             average_window_days: 0,
             created_at: now,
@@ -943,6 +1190,7 @@ export class BookViewSettingsModal extends Modal {
                 selected_weekdays: this.normalizeWeekdays(period.schedule?.selected_weekdays || []),
                 days_per_week: Math.max(0, Math.min(7, Math.round(period.schedule?.days_per_week ?? 7)))
             },
+            writing_day_threshold_words: Math.max(1, Math.round(period.writing_day_threshold_words ?? 1)),
             average_missed_scheduled_days: period.average_missed_scheduled_days ?? true,
             average_window_days: this.normalizeAverageWindowDays(period.average_window_days ?? 0),
             created_at: period.created_at || now,
@@ -1382,12 +1630,13 @@ export class BookViewSettingsModal extends Modal {
         return {
             enabled: current?.enabled ?? true,
             metricMode: current?.metricMode === 'pages' ? 'pages' : 'words',
-            todayWords: current?.todayWords ?? true,
-            totalWords: current?.totalWords ?? true,
-            completion: current?.completion ?? true,
-            writingDays: current?.writingDays ?? true,
-            dailyAverage: current?.dailyAverage ?? true,
-            currentFile: current?.currentFile ?? true
+            todayWords: current?.todayWords ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.today,
+            totalWords: current?.totalWords ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.total,
+            completion: current?.completion ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.completion,
+            writingDays: current?.writingDays ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.writingDays,
+            dailyAverage: current?.dailyAverage ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.dailyAverage,
+            currentFile: current?.currentFile ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.currentFile,
+            streak: current?.streak ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.streak
         };
     }
 

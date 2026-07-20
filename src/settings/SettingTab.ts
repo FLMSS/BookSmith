@@ -4,7 +4,6 @@ import { i18n } from '../i18n/i18n';
 import { TemplateEditModal } from '../modals/TemplateEditModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { GenericTextSuggester } from '../settings/GenericTextSuggester';
-import { getDailyRolloverOptions, normalizeDailyRolloverMinutes } from '../utils/logicalDay';
 export class BookSmithSettingTab extends PluginSettingTab {
     plugin: BookSmithPlugin;
     private expandedSections: Set<string> = new Set();
@@ -56,12 +55,15 @@ export class BookSmithSettingTab extends PluginSettingTab {
     
         // 基本设置
         this.createSection(containerEl, i18n.t('BASIC_OPTIONS'), el => this.renderBasicSettings(el));
-    
+
         // 模板设置
         this.createSection(containerEl, i18n.t('TEMPLATE_OPTIONS'), el => this.renderTemplateSettings(el));
-    
-        // 写作工具箱设置
-        this.createSection(containerEl, i18n.t('WRITING_TOOLS_OPTIONS'), el => this.renderWritingToolsSettings(el));
+
+        // Focus Mode and Statistics options now live in the in-app settings
+        // (the ⚙ on the project cover in the left pane).
+        new Setting(containerEl)
+            .setName('More settings')
+            .setDesc('Click the ⚙ on the project cover in the left pane for other settings (Focus Mode, Statistics, Scene Notes, goals, and more).');
     }
     
     private renderBasicSettings(containerEl: HTMLElement): void {
@@ -181,61 +183,4 @@ export class BookSmithSettingTab extends PluginSettingTab {
                 }));
     }
 
-    private renderWritingToolsSettings(containerEl: HTMLElement): void {
-        // 专注模式设置
-        const focusSection = containerEl.createDiv();
-        focusSection.createEl('h4', { text: i18n.t('FOCUS_MODE_OPTIONS') });
-    
-        new Setting(focusSection)
-            .setName(i18n.t('FOCUS_DURATION'))
-            .setDesc(i18n.t('FOCUS_DURATION_DESC'))
-            .addText(text => text
-                .setPlaceholder('25')
-                .setValue(this.plugin.settings.focus.workDuration.toString())
-                .onChange(async (value) => {
-                    const parsed = Number(value);
-                    const normalized = Number.isFinite(parsed) ? parsed : 25;
-                    this.plugin.settings.focus.workDuration = Math.min(75, Math.max(5, normalized));
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(focusSection)
-            .setName(i18n.t('BREAK_DURATION'))
-            .setDesc(i18n.t('BREAK_DURATION_DESC'))
-            .addText(text => text
-                .setPlaceholder('5')
-                .setValue(this.plugin.settings.focus.breakDuration.toString())
-                .onChange(async (value) => {
-                    this.plugin.settings.focus.breakDuration = Number(value) || 5;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(focusSection)
-            .setName(i18n.t('WORD_GOAL'))
-            .setDesc(i18n.t('WORD_GOAL_DESC'))
-            .addText(text => text
-                .setPlaceholder('500')
-                .setValue(this.plugin.settings.focus.wordGoal.toString())
-                .onChange(async (value) => {
-                    this.plugin.settings.focus.wordGoal = Number(value) || 500;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(focusSection)
-            .setName(i18n.t('WRITING_DAY_ENDS_AT'))
-            .setDesc(i18n.t('WRITING_DAY_ENDS_AT_DESC'))
-            .addDropdown(dropdown => {
-                getDailyRolloverOptions().forEach((option) => {
-                    dropdown.addOption(option.value, option.label);
-                });
-
-                dropdown
-                    .setValue(String(normalizeDailyRolloverMinutes(this.plugin.settings.focus.dailyRolloverMinutes)))
-                    .onChange(async (value) => {
-                        this.plugin.settings.focus.dailyRolloverMinutes = normalizeDailyRolloverMinutes(Number(value));
-                        await this.plugin.saveSettings();
-                        this.plugin.focusManager?.reloadCurrentDayStats();
-                    });
-            });
-    }
 }

@@ -8,9 +8,11 @@ export class NavigatorFolderModal extends Modal {
 
     constructor(
         app: App,
-        private onSelect: (folderPath: string | null) => void
+        private onSelect: (folderPath: string | null) => void,
+        private currentPath: string | null = null
     ) {
         super(app);
+        this.selectedPath = currentPath;
     }
 
     onOpen(): void {
@@ -19,6 +21,17 @@ export class NavigatorFolderModal extends Modal {
         contentEl.addClass('book-smith-navigator-folder-modal');
 
         contentEl.createEl('h2', { text: i18n.t('NAVIGATOR_SELECT_FOLDER') });
+
+        // Show which folder this project is currently linked to.
+        const currentRow = contentEl.createDiv({ cls: 'book-smith-navigator-folder-current' });
+        const currentIcon = currentRow.createSpan({ cls: 'book-smith-navigator-folder-current-icon' });
+        setIcon(currentIcon, 'link');
+        currentRow.createSpan({
+            cls: 'book-smith-navigator-folder-current-path',
+            text: this.currentPath
+                ? this.currentPath
+                : i18n.t('NAVIGATOR_NOT_SET_TITLE')
+        });
 
         const search = contentEl.createEl('input', {
             cls: 'book-smith-navigator-folder-search',

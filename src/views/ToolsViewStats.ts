@@ -107,21 +107,26 @@ export class ToolsViewStats {
             }
         public renderCalendar(container: HTMLElement) {
             const calendar = container.createDiv({ cls: 'book-smith-stats-calendar' });
-            const nav = calendar.createDiv({ cls: 'book-smith-stats-calendar-nav' });
 
-            const prevButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('PREVIOUS_MONTH') });
-            prevButton.addEventListener('click', () => {
-                this.view.shiftViewPeriod(-1);
-                this.view.redrawStatisticsView();
-            });
+            // The infinite-scroll list spans all history, so the month/year nav
+            // has nothing to drive — omit it entirely rather than show dead buttons.
+            if (!this.view.isInfiniteDailyList()) {
+                const nav = calendar.createDiv({ cls: 'book-smith-stats-calendar-nav' });
 
-            this.view.renderMonthYearPicker(nav);
+                const prevButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('PREVIOUS_MONTH') });
+                prevButton.addEventListener('click', () => {
+                    this.view.shiftViewPeriod(-1);
+                    this.view.redrawStatisticsView();
+                });
 
-            const nextButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('NEXT_MONTH') });
-            nextButton.addEventListener('click', () => {
-                this.view.shiftViewPeriod(1);
-                this.view.redrawStatisticsView();
-            });
+                this.view.renderMonthYearPicker(nav);
+
+                const nextButton = nav.createEl('button', { cls: 'book-smith-stats-nav-btn', text: i18n.t('NEXT_MONTH') });
+                nextButton.addEventListener('click', () => {
+                    this.view.shiftViewPeriod(1);
+                    this.view.redrawStatisticsView();
+                });
+            }
 
             this.view.renderCalendarBody(calendar);
         }

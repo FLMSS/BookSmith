@@ -11,7 +11,8 @@ import { ReferenceManager } from '../services/ReferenceManager';
 import { i18n } from '../i18n/i18n';
 import { formatWordCount } from '../utils/wordCount';
 import { BookViewSettingsModal } from '../modals/BookViewSettingsModal';
-import { LeftPaneStatKey, LEFT_PANE_STAT_VISIBILITY_FIELD, sanitizeLeftPaneStatOrder } from '../settings/settings';
+import { LeftPaneStatKey, LEFT_PANE_STAT_VISIBILITY_FIELD, LEFT_PANE_STAT_DEFAULT_VISIBLE, sanitizeLeftPaneStatOrder } from '../settings/settings';
+import { StreakInfo, computeStreakInfo } from '../utils/writingStreak';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -31,6 +32,8 @@ type WritingPeriodSettings = {
     mode: 'specific-days' | 'days-per-week';
     selectedWeekdays: number[];
     daysPerWeek: number;
+    /** Min net words in a day for it to count as a writing day (streak). */
+    thresholdWords: number;
     averageMissedScheduledDays: boolean;
     averageWindowDays: number;
 };
@@ -408,12 +411,13 @@ export class BookSmithView extends ItemView {
         const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
         const enabled = visibility?.enabled ?? true;
         const vis: Record<string, boolean> = {
-            todayWords: visibility?.todayWords ?? true,
-            totalWords: visibility?.totalWords ?? true,
-            completion: visibility?.completion ?? true,
-            writingDays: visibility?.writingDays ?? true,
-            dailyAverage: visibility?.dailyAverage ?? true,
-            currentFile: visibility?.currentFile ?? true
+            todayWords: visibility?.todayWords ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.today,
+            totalWords: visibility?.totalWords ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.total,
+            completion: visibility?.completion ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.completion,
+            writingDays: visibility?.writingDays ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.writingDays,
+            dailyAverage: visibility?.dailyAverage ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.dailyAverage,
+            currentFile: visibility?.currentFile ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.currentFile,
+            streak: visibility?.streak ?? LEFT_PANE_STAT_DEFAULT_VISIBLE.streak
         };
 
         const order = sanitizeLeftPaneStatOrder(visibility?.order);
@@ -485,6 +489,24 @@ export class BookSmithView extends ItemView {
                     ? Math.round(Math.min(100, (totalWords / targetWords) * 100))
                     : Math.round((book.stats.progress_by_chapter || 0) * 100);
                 item.createEl('span', { cls: 'book-smith-stat-value', text: `${completionPercent}%` });
+            },
+            streak: () => {
+                const streak = this.getWritingStreakInfo();
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'flame');
+                label.appendChild(createSpan({ text: ' Streak' }));
+                let text = '—';
+                if (streak) {
+                    const unit = visibility?.streakUnit === 'days' ? 'days' : 'weeks';
+                    const count = unit === 'days' ? streak.daysWritten : streak.weeks;
+                    const unitWord = unit === 'days'
+                        ? (count === 1 ? 'day' : 'days')
+                        : (count === 1 ? 'week' : 'weeks');
+                    text = `${count} ${unitWord}`;
+                    if (streak.required > 0) text += ` (${streak.met}/${streak.required})`;
+                }
+                item.createEl('span', { cls: 'book-smith-stat-value', text });
             },
             writingDays: () => {
                 const writingDaysValue = this.getDisplayedWritingDays();
@@ -665,6 +687,7 @@ export class BookSmithView extends ItemView {
             mode: period.schedule?.mode === 'days-per-week' ? 'days-per-week' : 'specific-days',
             selectedWeekdays: this.normalizeWeekdays(period.schedule?.selected_weekdays || []),
             daysPerWeek: Math.max(0, Math.min(7, Math.round(period.schedule?.days_per_week ?? 7))),
+            thresholdWords: Math.max(1, Math.round(period.writing_day_threshold_words ?? 1)),
             averageMissedScheduledDays: period.average_missed_scheduled_days ?? true,
             averageWindowDays: this.normalizeAverageWindowDays(period.average_window_days ?? 0)
         };
@@ -680,6 +703,7 @@ export class BookSmithView extends ItemView {
             mode: 'specific-days',
             selectedWeekdays: [0, 1, 2, 3, 4, 5, 6],
             daysPerWeek: 7,
+            thresholdWords: 1,
             averageMissedScheduledDays: true,
             averageWindowDays: 0
         };
@@ -719,6 +743,22 @@ export class BookSmithView extends ItemView {
         if (date < period.startDate) return false;
         if (period.endDate && date > period.endDate) return false;
         return true;
+    }
+
+    // === Writing streak (semantics live in utils/writingStreak.ts) ===
+
+    /** Net words written on a date (daily-output basis, mode-independent). */
+    private getStreakDayValue(date: string): number {
+        const entry = this.currentBook?.stats?.daily_progress?.[date];
+        if (entry) return Math.max(0, entry.net_change || 0);
+        return Math.max(0, this.currentBook?.stats?.daily_words?.[date] || 0);
+    }
+
+    private getWritingStreakInfo(): StreakInfo | null {
+        const periods = this.getWritingPeriods();
+        if (periods.length === 0) return null;
+        const today = getLogicalDayISODate(new Date(), this.plugin.settings.focus.dailyRolloverMinutes);
+        return computeStreakInfo(periods, (iso) => this.getStreakDayValue(iso), today);
     }
 
     private getPeriodRangeDates(period: WritingPeriodSettings): string[] {

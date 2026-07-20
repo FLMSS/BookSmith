@@ -4,6 +4,29 @@
     gap: 10px;
 }
 
+/* "Currently linked to" row under the title. */
+.book-smith-navigator-folder-current {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.book-smith-navigator-folder-current-icon {
+    display: inline-flex;
+    align-items: center;
+}
+.book-smith-navigator-folder-current-icon svg {
+    width: 14px;
+    height: 14px;
+}
+.book-smith-navigator-folder-current-path {
+    font-family: var(--font-monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .book-smith-navigator-folder-search {
     width: 100%;
     border: 1px solid var(--background-modifier-border);
