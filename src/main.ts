@@ -322,17 +322,7 @@ export default class BookSmithPlugin extends Plugin {
                 ...(savedSettings?.bookView || {}),
                 leftPanelInfo: {
                     ...DEFAULT_SETTINGS.bookView.leftPanelInfo,
-                    ...(savedSettings?.bookView?.leftPanelInfo || {}),
-                    writingSchedule: {
-                        ...DEFAULT_SETTINGS.bookView.leftPanelInfo.writingSchedule,
-                        ...(savedSettings?.bookView?.leftPanelInfo?.writingSchedule || {}),
-                        scheduleHistory: (
-                            savedSettings?.bookView?.leftPanelInfo?.writingSchedule?.scheduleHistory &&
-                            savedSettings.bookView.leftPanelInfo.writingSchedule.scheduleHistory.length > 0
-                        )
-                            ? savedSettings.bookView.leftPanelInfo.writingSchedule.scheduleHistory
-                            : DEFAULT_SETTINGS.bookView.leftPanelInfo.writingSchedule.scheduleHistory
-                    }
+                    ...(savedSettings?.bookView?.leftPanelInfo || {})
                 }
             }
         };

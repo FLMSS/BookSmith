@@ -72,6 +72,13 @@ export interface BookWritingPeriod {
         selected_weekdays: number[];
         days_per_week: number;
     };
+    /**
+     * Minimum net words written in a day for it to count as a "writing day"
+     * (streak + summaries). Stored in words; shown as words or pages per the
+     * metric mode. Distinct from the daily goal: writing above this but below
+     * the goal still keeps the streak alive. Default 1 (any writing counts).
+     */
+    writing_day_threshold_words?: number;
     average_missed_scheduled_days: boolean;
     average_window_days: number;
     created_at: string;

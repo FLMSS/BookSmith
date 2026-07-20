@@ -11,6 +11,7 @@ import { SceneNote } from '../types/sceneNote';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { ToolsViewStats } from './ToolsViewStats';
+import { classifyStreakDays, StreakDayClass, normalizeStreakPeriods, getWeekQuotaDays, getWeekStartISO } from '../utils/writingStreak';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -113,6 +114,15 @@ export class ToolView extends ItemView {
     // Create main view
     public createNormalView(container: HTMLElement) {
         this.isNavigatorMode = false;
+        // renderStatisticsView marks the container with this class; empty() only
+        // clears children, not classes, so drop it here — otherwise
+        // isStatsViewVisible() stays true in the toolbox and a pending stats
+        // refresh timer redraws the stats view (toolbar → jumps back to stats).
+        container.removeClass('book-smith-stats-view');
+        if (this.statsRefreshTimer !== null) {
+            window.clearTimeout(this.statsRefreshTimer);
+            this.statsRefreshTimer = null;
+        }
         this.createHeader(container as HTMLElement);
         const actionsContainer = container.createDiv({ cls: 'book-smith-toolbox-actions' });
         if (!this.toolbox) {
@@ -718,6 +728,25 @@ export class ToolView extends ItemView {
             this.statsPeriodMode = (select.value as 'day' | 'week' | 'month' | 'year');
             this.redrawStatisticsView();
         });
+
+        // Day mode only: month grid vs a plain per-day list.
+        if (this.statsPeriodMode === 'day') {
+            const viewRow = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
+            viewRow.createEl('label', { text: 'View' });
+            const viewSelect = viewRow.createEl('select', { cls: 'book-smith-stats-select' });
+            viewSelect.createEl('option', { value: 'calendar', text: 'Calendar' });
+            viewSelect.createEl('option', { value: 'list', text: 'List' });
+            const savedView = this.plugin.settings.stats?.dailyView;
+            const isListView = savedView === 'list' || savedView === 'quota' || savedView === 'timeline';
+            viewSelect.value = isListView ? 'list' : 'calendar';
+            viewSelect.addEventListener('change', async () => {
+                this.plugin.settings.stats.dailyView = viewSelect.value === 'list' ? 'list' : 'calendar';
+                this.timelineLoadedCount = 0;   // fresh scroll on mode switch
+                this.timelineScrollTop = 0;
+                await this.plugin.saveSettings();
+                this.redrawStatisticsView();
+            });
+        }
     }
 
     public renderStatsSettingsPanel(container: HTMLElement) {
@@ -768,6 +797,58 @@ export class ToolView extends ItemView {
                 this.redrawStatisticsView();
             });
         });
+
+        // Day-mode sub-options: calendar coloring, or list layout modifiers.
+        if (this.statsPeriodMode === 'day') {
+            const raw = this.plugin.settings.stats?.dailyView;
+            const isList = raw === 'list' || raw === 'quota' || raw === 'timeline';
+
+            if (!isList) {
+                // Calendar coloring: standard (word-count purple) or streak chain.
+                const calendarRow = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
+                calendarRow.createEl('label', { text: 'Calendar style' });
+                const calendarSelect = calendarRow.createEl('select', { cls: 'book-smith-stats-select' });
+                calendarSelect.createEl('option', { value: 'standard', text: 'Standard' });
+                calendarSelect.createEl('option', { value: 'streak', text: 'Streak view' });
+                calendarSelect.value = this.plugin.settings.stats?.calendarView === 'streak' ? 'streak' : 'standard';
+                calendarSelect.addEventListener('change', async () => {
+                    this.plugin.settings.stats.calendarView = calendarSelect.value === 'streak' ? 'streak' : 'standard';
+                    await this.plugin.saveSettings();
+                    this.redrawStatisticsView();
+                });
+            } else {
+                const infinite = this.plugin.settings.stats?.listInfinite ?? (raw === 'timeline');
+                const writingOnly = this.plugin.settings.stats?.listWritingDaysOnly ?? (raw === 'quota');
+
+                const infRow = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
+                infRow.createEl('label', { text: 'Infinite scroll' });
+                const infToggle = infRow.createEl('input', {
+                    cls: 'book-smith-stats-settings-toggle',
+                    attr: { type: 'checkbox' }
+                });
+                infToggle.checked = infinite;
+                infToggle.addEventListener('change', async () => {
+                    this.plugin.settings.stats.listInfinite = infToggle.checked;
+                    this.timelineLoadedCount = 0;
+                    this.timelineScrollTop = 0;
+                    await this.plugin.saveSettings();
+                    this.redrawStatisticsView();
+                });
+
+                const wdRow = panel.createDiv({ cls: 'book-smith-stats-settings-row' });
+                wdRow.createEl('label', { text: 'Writing days only' });
+                const wdToggle = wdRow.createEl('input', {
+                    cls: 'book-smith-stats-settings-toggle',
+                    attr: { type: 'checkbox' }
+                });
+                wdToggle.checked = writingOnly;
+                wdToggle.addEventListener('change', async () => {
+                    this.plugin.settings.stats.listWritingDaysOnly = wdToggle.checked;
+                    await this.plugin.saveSettings();
+                    this.redrawStatisticsView();
+                });
+            }
+        }
     }
 
     public getStatsProgressModeLabel(mode: 'new-material-net' | 'daily-output' | 'raw'): string {
@@ -887,7 +968,10 @@ export class ToolView extends ItemView {
     }
 
     public async persistStatsPreferences() {
+        // Spread the existing object: rebuilding it from scratch silently
+        // dropped any stats field not listed here (e.g. calendarView).
         this.plugin.settings.stats = {
+            ...this.plugin.settings.stats,
             displayMode: this.statsDisplayMode,
             writingDisplayMode: this.statsWritingDisplayMode,
             leftPaneWritingDisplayMode: this.plugin.settings.stats?.leftPaneWritingDisplayMode || 'daily-output',
@@ -897,8 +981,30 @@ export class ToolView extends ItemView {
     }
 
 
+    /** True when the day period is showing the all-history infinite-scroll
+     *  list, for which the month/year nav has nothing to drive. */
+    public isInfiniteDailyList(): boolean {
+        if (this.statsPeriodMode !== 'day') return false;
+        const raw = this.plugin.settings.stats?.dailyView;
+        const isList = raw === 'list' || raw === 'quota' || raw === 'timeline';
+        if (!isList) return false;
+        return this.plugin.settings.stats?.listInfinite ?? (raw === 'timeline');
+    }
+
     public renderCalendarBody(calendar: HTMLElement) {
         if (this.statsPeriodMode === 'day') {
+            const raw = this.plugin.settings.stats?.dailyView;
+            const isList = raw === 'list' || raw === 'quota' || raw === 'timeline';
+            if (isList) {
+                const infinite = this.plugin.settings.stats?.listInfinite ?? (raw === 'timeline');
+                const writingDaysOnly = this.plugin.settings.stats?.listWritingDaysOnly ?? (raw === 'quota');
+                const list = calendar.createDiv({
+                    cls: `book-smith-stats-day-list${infinite ? ' is-timeline' : ''}`
+                });
+                this.renderDayList(list, { infinite, writingDaysOnly });
+                return;
+            }
+
             const weekdays = calendar.createDiv({ cls: 'book-smith-stats-weekdays' });
             ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
                 weekdays.createEl('span', { text: day });
@@ -1109,11 +1215,45 @@ export class ToolView extends ItemView {
         });
     }
 
+    /**
+     * Streak-view support: per-day chain classification for the selected stats
+     * book over the visible month, or null when streak view is off / source is
+     * Global (a streak needs one project's schedule to judge against).
+     */
+    private getStreakClassesForCalendar(): Map<string, StreakDayClass> | null {
+        if (this.plugin.settings.stats?.calendarView !== 'streak') return null;
+        if (this.statsSourceBookId === 'global') return null;
+        const book = this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId);
+        if (!book) return null;
+
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        const created = book.basic?.created_at ? new Date(book.basic.created_at) : new Date();
+        const fallbackStart = getLogicalDayISODate(
+            Number.isNaN(created.getTime()) ? new Date() : created,
+            rollover
+        );
+        const periods = normalizeStreakPeriods(book.stats?.writing_periods, fallbackStart);
+        const getDayValue = (iso: string): number => {
+            const entry = book.stats?.daily_progress?.[iso];
+            if (entry) return Math.max(0, entry.net_change || 0);
+            return Math.max(0, book.stats?.daily_words?.[iso] || 0);
+        };
+        const today = getLogicalDayISODate(new Date(), rollover);
+        const year = this.statsViewMonth.getFullYear();
+        const month = this.statsViewMonth.getMonth();
+        const rangeStart = this.toLocalISODate(new Date(year, month, 1));
+        const rangeEnd = this.toLocalISODate(new Date(year, month + 1, 0));
+        return classifyStreakDays(periods, getDayValue, today, rangeStart, rangeEnd);
+    }
+
     private renderCalendarDays(grid: HTMLElement) {
         const year = this.statsViewMonth.getFullYear();
         const month = this.statsViewMonth.getMonth();
         const firstDay = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const streakClasses = this.getStreakClassesForCalendar();
+        if (streakClasses !== null) grid.addClass('is-streak-view');
 
         for (let i = 0; i < firstDay; i++) {
             grid.createDiv({ cls: 'book-smith-stats-day is-empty' });
@@ -1156,6 +1296,13 @@ export class ToolView extends ItemView {
                 }
             }
 
+            if (streakClasses !== null) {
+                const cls = streakClasses.get(iso);
+                if (cls === 'full') dayEl.addClass('is-streak-day');
+                else if (cls === 'light') dayEl.addClass('is-streak-fill');
+                else if (cls === 'red') dayEl.addClass('is-streak-broken');
+            }
+
             if (this.statsDailyComments[iso]?.trim()) {
                 dayEl.addClass('has-comment');
             }
@@ -1164,6 +1311,192 @@ export class ToolView extends ItemView {
                 this.selectedStatsDate = iso;
                 this.redrawStatisticsView();
             });
+        }
+    }
+
+    /** Timeline view state: rows loaded + scroll offset, kept across redraws
+     *  so selecting a day doesn't bounce you back to the top. */
+    private timelineLoadedCount = 0;
+    private timelineScrollTop = 0;
+
+    /** Marks a list row's comment dot and (if enabled) a one-line preview. */
+    private addDayCommentPreview(row: HTMLElement, iso: string): void {
+        const comment = this.statsDailyComments[iso]?.trim();
+        if (!comment) return;
+        row.addClass('has-comment');
+        if (this.plugin.settings.stats?.listCommentPreview !== false) {
+            row.createDiv({ cls: 'book-smith-stats-day-list-comment', text: comment });
+        }
+    }
+
+    /**
+     * Infinite-scroll timeline: every writing-period day from today back to
+     * the earliest period start (for Global: days with recorded activity),
+     * newest first, loaded in chunks as you scroll. Month headers separate
+     * the months; the month picker doesn't apply here.
+     */
+    /**
+     * Unified day list. `infinite`: false = the visible month (month picker
+     * applies), true = all history as an infinite scroll (ordered by the
+     * Timeline order setting). `writingDaysOnly`: false = every writing-period
+     * day, true = only quota days (written days + one zero row per missed
+     * slot). Writing-days-only needs a project (Global has no schedule).
+     */
+    private renderDayList(container: HTMLElement, opts: { infinite: boolean; writingDaysOnly: boolean }) {
+        const { infinite, writingDaysOnly } = opts;
+        const CHUNK = 60;
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        const today = getLogicalDayISODate(new Date(), rollover);
+
+        const book = this.statsSourceBookId === 'global'
+            ? null
+            : this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId) || null;
+
+        const getDayValue = (iso: string): number => {
+            const entry = book?.stats?.daily_progress?.[iso];
+            if (entry) return Math.max(0, entry.net_change || 0);
+            return Math.max(0, book?.stats?.daily_words?.[iso] || 0);
+        };
+
+        // Period coverage + how far back "all history" reaches.
+        let periods: ReturnType<typeof normalizeStreakPeriods> | null = null;
+        let coveredBy: (iso: string) => boolean;
+        let earliest: string;
+        if (book) {
+            const created = book.basic?.created_at ? new Date(book.basic.created_at) : new Date();
+            const fallbackStart = getLogicalDayISODate(
+                Number.isNaN(created.getTime()) ? new Date() : created,
+                rollover
+            );
+            periods = normalizeStreakPeriods(book.stats?.writing_periods, fallbackStart);
+            const ps = periods;
+            coveredBy = (iso) => ps.some((p) => iso >= p.startDate && (!p.endDate || iso <= p.endDate));
+            earliest = periods.reduce((min, p) => (p.startDate < min ? p.startDate : min), periods[0].startDate);
+        } else {
+            coveredBy = (iso) => this.hasDayProgressActivity(iso);
+            const activity = [
+                ...Object.keys(this.statsDailyWords || {}),
+                ...Object.keys(this.statsDailyProgress || {})
+            ].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+            earliest = activity[0] || today;
+        }
+
+        if (writingDaysOnly && !periods) {
+            container.createEl('p', {
+                cls: 'book-smith-stats-day-list-empty',
+                text: 'Writing days view needs a project (not Global).'
+            });
+            return;
+        }
+
+        // Range: whole history (infinite) or the visible month, clamped to today.
+        const monthStart = this.toLocalISODate(new Date(this.statsViewMonth.getFullYear(), this.statsViewMonth.getMonth(), 1));
+        const monthEnd = this.toLocalISODate(new Date(this.statsViewMonth.getFullYear(), this.statsViewMonth.getMonth() + 1, 0));
+        const rangeStart = infinite ? earliest : monthStart;
+        const rangeEndRaw = infinite ? today : monthEnd;
+        const rangeEnd = rangeEndRaw < today ? rangeEndRaw : today;
+
+        // Build entries { iso, missed } within range.
+        const entries: Array<{ iso: string; missed: boolean }> = [];
+        if (writingDaysOnly && periods) {
+            let week = getWeekStartISO(rangeStart);
+            const lastWeek = getWeekStartISO(rangeEnd);
+            for (let guard = 0; guard < 600 && week <= lastWeek; guard++) {
+                const { written, missed } = getWeekQuotaDays(periods, getDayValue, week, today);
+                written.forEach((d) => { if (d >= rangeStart && d <= rangeEnd) entries.push({ iso: d, missed: false }); });
+                missed.forEach((d) => { if (d >= rangeStart && d <= rangeEnd) entries.push({ iso: d, missed: true }); });
+                const next = new Date(`${week}T12:00:00`);
+                next.setDate(next.getDate() + 7);
+                week = this.toLocalISODate(next);
+            }
+        } else {
+            const cursor = new Date(`${rangeStart}T12:00:00`);
+            const end = new Date(`${rangeEnd}T12:00:00`);
+            for (let guard = 0; guard < 20000 && cursor <= end; guard++) {
+                const iso = this.toLocalISODate(cursor);
+                if (coveredBy(iso)) entries.push({ iso, missed: false });
+                cursor.setDate(cursor.getDate() + 1);
+            }
+        }
+
+        if (entries.length === 0) {
+            container.createEl('p', {
+                cls: 'book-smith-stats-day-list-empty',
+                text: writingDaysOnly
+                    ? (infinite ? 'No quota days yet.' : 'No quota days this month.')
+                    : (infinite ? 'No recorded writing days yet.' : 'No writing-period days this month.')
+            });
+            return;
+        }
+
+        // Order: month view reads top-down ascending; infinite uses the setting.
+        const order = infinite ? this.plugin.settings.stats?.timelineOrder : 'oldest';
+        entries.sort((a, b) => {
+            if (order === 'oldest') return a.iso.localeCompare(b.iso);
+            if (order === 'month-desc') {
+                const ma = a.iso.slice(0, 7);
+                const mb = b.iso.slice(0, 7);
+                return ma === mb ? a.iso.localeCompare(b.iso) : mb.localeCompare(ma);
+            }
+            return b.iso.localeCompare(a.iso); // newest
+        });
+
+        let lastMonthKey = '';
+        let rendered = 0;
+        const renderRow = (entry: { iso: string; missed: boolean }) => {
+            const iso = entry.iso;
+            if (infinite) {
+                const monthKey = iso.slice(0, 7);
+                if (monthKey !== lastMonthKey) {
+                    lastMonthKey = monthKey;
+                    const md = new Date(`${iso}T12:00:00`);
+                    container.createEl('div', {
+                        cls: 'book-smith-stats-timeline-month',
+                        text: md.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+                    });
+                }
+            }
+            const d = new Date(`${iso}T12:00:00`);
+            const metricValue = this.getMetricForPeriod(d);
+            const metricText = this.getDayMetricShortText(metricValue);
+            const row = container.createDiv({ cls: 'book-smith-stats-day-list-row' });
+            if (iso === this.selectedStatsDate) row.addClass('is-selected');
+            if (entry.missed) row.addClass('is-missed');
+            row.createEl('span', {
+                cls: 'book-smith-stats-day-list-date',
+                text: d.toLocaleString('en-US', { month: 'long', day: 'numeric' })
+            });
+            const valueEl = row.createEl('span', { cls: 'book-smith-stats-day-list-value', text: metricText });
+            if (entry.missed || metricValue < 0) valueEl.addClass('progress-negative');
+            else if (metricValue > 0) valueEl.addClass('progress-purple');
+            this.addDayCommentPreview(row, iso);
+            row.addEventListener('click', () => {
+                this.timelineScrollTop = container.scrollTop;
+                this.selectedStatsDate = iso;
+                this.redrawStatisticsView();
+            });
+            rendered++;
+        };
+
+        if (!infinite) {
+            entries.forEach(renderRow);
+            return;
+        }
+
+        // Infinite scroll: chunked render, remembers how much was open + scroll.
+        const loadMore = () => {
+            const target = Math.min(entries.length, Math.max(rendered + CHUNK, this.timelineLoadedCount));
+            while (rendered < target) renderRow(entries[rendered]);
+            this.timelineLoadedCount = rendered;
+        };
+        loadMore();
+        container.addEventListener('scroll', () => {
+            this.timelineScrollTop = container.scrollTop;
+            if (rendered >= entries.length) return;
+            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 60) loadMore();
+        });
+        if (this.timelineScrollTop > 0) {
+            requestAnimationFrame(() => { container.scrollTop = this.timelineScrollTop; });
         }
     }
 
