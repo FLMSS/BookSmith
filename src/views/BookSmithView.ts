@@ -1,5 +1,5 @@
 // === Import declarations ===
-import { ItemView, WorkspaceLeaf, Notice, TFolder, TFile, TAbstractFile, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, TFolder, TFile, TAbstractFile, setIcon, MarkdownView } from 'obsidian';
 import BookSmithPlugin from '../main';
 import { Book, BookWritingPeriod } from '../types/book';
 import { getLogicalDayISODate } from '../utils/logicalDay';
@@ -373,7 +373,8 @@ export class BookSmithView extends ItemView {
                 this.app,
                 refreshedBookPath,
                 this.plugin.bookManager,
-                refreshTree
+                refreshTree,
+                this.getTreePageNumbersProvider()
             ).render(this.currentBook);
 
             const content = this.containerEl.children[1] as HTMLElement;
@@ -387,8 +388,21 @@ export class BookSmithView extends ItemView {
             this.app,
             bookPath,
             this.plugin.bookManager,
-            refreshTree
+            refreshTree,
+            this.getTreePageNumbersProvider()
         ).render(this.currentBook);
+    }
+
+    /** Provider for the optional per-file size labels in the chapter tree. */
+    private getTreePageNumbersProvider() {
+        return {
+            mode: () => {
+                const m = this.plugin.settings.treeFileMetric;
+                return (m === 'pages' || m === 'words') ? m : 'off' as const;
+            },
+            wordsPerPage: () => this.plugin.settings.stats?.wordsPerPage || 250,
+            countWords: (text: string) => this.plugin.statsManager.countWords(text)
+        };
     }
 
     private renderEmptyState(container: HTMLElement) {
@@ -445,23 +459,41 @@ export class BookSmithView extends ItemView {
                 });
             },
             currentFile: () => {
-                // Word/page count of the active file only — but only when that
-                // file lives under the BookSmith book root. Files outside our
-                // folders stay at 0. Read straight from the open editor (sync).
+                // Word/page count of the active file only — and only when it
+                // lives under the BookSmith book root; anything else stays 0.
+                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
+                const label = item.createSpan();
+                setIcon(label, 'file-text');
+                label.appendChild(createSpan({ text: ' Current Scene' }));
+                const valueEl = item.createEl('span', {
+                    cls: 'book-smith-stat-value',
+                    text: this.getMetricDisplayText(0, metricMode, wordsPerPage)
+                });
+
                 const activeFile = this.app.workspace.getActiveFile();
                 const root = this.plugin.settings.defaultBookPath;
                 const inBookFolder = !!(activeFile && root
                     && (activeFile.path === root || activeFile.path.startsWith(root + '/')));
-                const content = inBookFolder ? (this.app.workspace.activeEditor?.editor?.getValue() ?? '') : '';
-                const words = content ? this.plugin.statsManager.countWords(content) : 0;
-                const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
-                const label = item.createSpan();
-                setIcon(label, 'file-text');
-                label.appendChild(createSpan({ text: ' Current file' }));
-                item.createEl('span', {
-                    cls: 'book-smith-stat-value',
-                    text: this.getMetricDisplayText(words, metricMode, wordsPerPage)
-                });
+                if (!activeFile || !inBookFolder) return;
+
+                // Only trust the editor when it is verifiably showing the active
+                // file: `workspace.activeEditor` lags on file switches/moves,
+                // which showed 0 right after moving a file and the PREVIOUS
+                // file's count after switching. On any mismatch, read the file
+                // from the vault instead and patch the value in when resolved.
+                const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (mdView?.file?.path === activeFile.path && mdView.editor) {
+                    const words = this.plugin.statsManager.countWords(mdView.editor.getValue());
+                    valueEl.setText(this.getMetricDisplayText(words, metricMode, wordsPerPage));
+                    return;
+                }
+                void this.app.vault.cachedRead(activeFile)
+                    .then((content) => {
+                        if (!valueEl.isConnected) return; // stats re-rendered meanwhile
+                        const words = this.plugin.statsManager.countWords(content);
+                        valueEl.setText(this.getMetricDisplayText(words, metricMode, wordsPerPage));
+                    })
+                    .catch(() => { /* unreadable — leave 0 */ });
             },
             total: () => {
                 const item = statsContainer.createDiv({ cls: 'book-smith-stat-item' });
@@ -571,11 +603,10 @@ export class BookSmithView extends ItemView {
     }
 
     private getDisplayedTodayValue(date: string): number {
-        const activePeriod = this.getActivePeriodForDate(date);
-        if (!activePeriod) {
-            return 0;
-        }
-
+        // No period gate here: today's writing always shows, even when no
+        // writing period covers today (an ended/not-yet-started schedule
+        // shouldn't make live typing read as 0 — that looks like a bug).
+        // Periods still govern the streak, writing days, and averages.
         const entry = this.getDailyProgressEntry(date);
         if (!entry) {
             return this.currentBook?.stats?.daily_words?.[date] || 0;
@@ -602,6 +633,21 @@ export class BookSmithView extends ItemView {
         return coveredDates.size;
     }
 
+    /**
+     * Effective Daily Average display options. These are global display
+     * settings now; the per-period stored values only serve as a legacy
+     * fallback for configs saved before the move.
+     */
+    private getDailyAverageWindowDays(period: WritingPeriodSettings): number {
+        const global = this.plugin.settings.stats?.dailyAverageWindowDays;
+        return this.normalizeAverageWindowDays(global ?? period.averageWindowDays);
+    }
+
+    private getDailyAverageCountMissed(period: WritingPeriodSettings): boolean {
+        return this.plugin.settings.stats?.dailyAverageCountMissedAsZero
+            ?? period.averageMissedScheduledDays;
+    }
+
     private getDisplayedDailyAverage(): number {
         if (!this.currentBook) return 0;
 
@@ -616,6 +662,7 @@ export class BookSmithView extends ItemView {
         const datesInRange = this.getPeriodAverageRangeDates(currentPeriod);
         if (datesInRange.length === 0) return 0;
 
+        const countMissedAsZero = this.getDailyAverageCountMissed(currentPeriod);
         let totalValue = 0;
         let denominator = 0;
         let nonZeroDays = 0;
@@ -629,7 +676,7 @@ export class BookSmithView extends ItemView {
             }
 
             const requiredWeight = this.getRequiredDayWeight(date, currentPeriod);
-            if (currentPeriod.averageMissedScheduledDays) {
+            if (countMissedAsZero) {
                 denominator += requiredWeight;
             } else if (value !== 0 && requiredWeight > 0) {
                 denominator += requiredWeight;
@@ -772,12 +819,13 @@ export class BookSmithView extends ItemView {
         const periodDates = this.getPeriodRangeDates(period);
         if (periodDates.length === 0) return [];
 
-        if (period.averageWindowDays <= 0) {
+        const windowDays = this.getDailyAverageWindowDays(period);
+        if (windowDays <= 0) {
             return periodDates;
         }
 
         const end = periodDates[periodDates.length - 1];
-        const rollingStart = this.shiftISODate(end, -(period.averageWindowDays - 1));
+        const rollingStart = this.shiftISODate(end, -(windowDays - 1));
         const start = rollingStart > period.startDate ? rollingStart : period.startDate;
         return this.enumerateISODateRange(start, end);
     }
@@ -860,9 +908,9 @@ export class BookSmithView extends ItemView {
                 : i18n.t('AVERAGE_DAILY_WORDS');
 
         if (mode === 'pages' && labelType === 'total') {
-            const englishAdjusted = base.replace(/words?/i, 'pages');
+            const englishAdjusted = base.replace(/words?/i, 'Pages');
             if (englishAdjusted !== base) return englishAdjusted;
-            return 'Total pages';
+            return 'Total Pages';
         }
 
         return base;

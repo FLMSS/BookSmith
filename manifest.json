@@ -1,7 +1,7 @@
 {
 	"id": "book-smith-fork",
 	"name": "Book Smith+",
-	"version": "1.2.13",
+	"version": "1.4.7",
 	"minAppVersion": "0.15.0",
 	"description": "Simplify long-form writing and book creation. Organize chapters, track progress, and export your manuscript in various formats for a seamless publishing workflow.",
 	"author": "FelMNZ",

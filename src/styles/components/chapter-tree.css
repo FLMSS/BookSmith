@@ -49,6 +49,22 @@
     cursor: grabbing;
 }
 
+/* Per-file size ("3.4 pages" / "820 words"), right-aligned, optional. Stays
+   visible on hover. */
+.book-smith-tree-page {
+    margin-left: auto;
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    padding-right: 2px;
+}
+
+/* Folder sums always step back visually — the individual file sizes are the
+   primary signal; the folder total is supporting context. */
+.book-smith-tree-page.is-folder-sum {
+    opacity: 0.45;
+}
+
 /* 图标和标题容器样式 */
 .book-smith-folder-toggle,
 .book-smith-tree-icon {
@@ -112,9 +128,9 @@
     text-decoration: none;
 }
 
-.book-smith-file-link:hover {
-    background-color: var(--background-modifier-hover);
-}
+/* No separate hover background on the inner title link — the row-level
+   header hover is the single hover surface (it spans the whole row,
+   including the size label; a link-level bg stacked darker on top). */
 
 /* 子节点容器样式 */
 .book-smith-folder-children,

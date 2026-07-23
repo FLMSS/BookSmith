@@ -220,6 +220,14 @@
     cursor: pointer;
     transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
+.book-smith-navigator-folder-glyph {
+    display: inline-flex;
+    align-items: center;
+}
+.book-smith-navigator-folder-glyph svg {
+    width: 16px;
+    height: 16px;
+}
 .book-smith-navigator-folder-btn:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);

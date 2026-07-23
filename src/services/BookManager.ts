@@ -123,6 +123,30 @@ export class BookManager {
         );
     }
 
+    /**
+     * Every book's real folder plus its (normalized) Navigator folder. Used to
+     * resolve which project a file belongs to when it lives in a project's
+     * Navigator folder rather than under the book's own folder.
+     */
+    async getBookLocations(): Promise<Array<{ uuid: string; title: string; folderPath: string; navigatorFolder: string | null }>> {
+        const result: Array<{ uuid: string; title: string; folderPath: string; navigatorFolder: string | null }> = [];
+        const rootFolder = this.app.vault.getAbstractFileByPath(this.rootPath);
+        if (!(rootFolder instanceof TFolder)) return result;
+
+        for (const folder of this.collectBookFolders(rootFolder)) {
+            const book = await this.getBookConfig(folder);
+            if (!book) continue;
+            const nav = book.navigatorFolder?.trim();
+            result.push({
+                uuid: book.basic.uuid,
+                title: book.basic.title,
+                folderPath: folder.path,
+                navigatorFolder: nav ? nav.replace(/^\/+|\/+$/g, '') : null
+            });
+        }
+        return result;
+    }
+
     async getBookFolderMap(): Promise<Record<string, string>> {
         const map: Record<string, string> = {};
         const rootFolder = this.app.vault.getAbstractFileByPath(this.rootPath);

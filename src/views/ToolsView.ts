@@ -373,7 +373,12 @@ export class ToolView extends ItemView {
                     : i18n.t('SELECT_FOLDER')
             }
         });
-        setIcon(folderButton, 'folder-cog');
+        // Same 'folder' Lucide icon as the left-pane tree. NB: setIcon must go
+        // into a SPAN inside the button, not the button itself — icons set
+        // directly on these square buttons rendered broken (the left-pane tree
+        // and the navigator file rows both use the span pattern and work).
+        const folderIconSpan = folderButton.createSpan({ cls: 'book-smith-navigator-folder-glyph' });
+        setIcon(folderIconSpan, 'folder');
         folderButton.addEventListener('click', () => this.openNavigatorFolderPicker());
 
         if (!this.navigatorBook) {
@@ -2116,12 +2121,16 @@ export class ToolView extends ItemView {
             cls: 'book-smith-scene-notes-compact-btn',
             attr: { 'aria-label': 'Toggle compact view', title: 'Toggle compact view' }
         });
-        setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+        // Text glyph, not setIcon — see the navigator folder button note.
+        const compactGlyph = compactBtn.createSpan({
+            cls: 'book-smith-scene-notes-compact-glyph',
+            text: this.sceneNotesCompact ? '≡' : '☰'
+        });
         if (this.sceneNotesCompact) compactBtn.addClass('is-active');
         compactBtn.addEventListener('click', () => {
             this.sceneNotesCompact = !this.sceneNotesCompact;
             view.toggleClass('is-compact', this.sceneNotesCompact);
-            setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+            compactGlyph.textContent = this.sceneNotesCompact ? '≡' : '☰';
             compactBtn.toggleClass('is-active', this.sceneNotesCompact);
         });
 
@@ -2171,11 +2180,15 @@ export class ToolView extends ItemView {
             const activeFilePath = activeFile?.extension === 'md' ? activeFile.path : null;
             const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
 
-            // Resolve the book that owns the active file.
+            // Resolve the book that owns the active file — either it lives under
+            // the book's own folder, or under the book's Navigator folder (so a
+            // linked file outside the project still shows the project's notes).
             let activeBookId: string | null = null;
             if (activeFilePath) {
+                const under = (base?: string) =>
+                    !!base && (activeFilePath === base || activeFilePath.startsWith(base + '/'));
                 const entry = allEntries.find(e =>
-                    activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
+                    under(e.owner.folderPath) || under(e.owner.navigatorFolder)
                 );
                 activeBookId = entry?.owner.uuid || null;
             }
@@ -2189,10 +2202,11 @@ export class ToolView extends ItemView {
             if (projectEntries.length > 0) {
                 orderedFiles = await this.getBookFileOrderCached(projectEntries[0].owner.folderPath);
             }
+            const locationLabels = await this.computeSceneNoteLocations(projectEntries, orderedFiles);
             if (this.sceneNotesContainer !== container) return;
 
             // Now do a sync rebuild — atomic empty+fill, no visible gap.
-            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId);
+            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId, locationLabels);
         })();
     }
 
@@ -2226,6 +2240,61 @@ export class ToolView extends ItemView {
         } catch {
             return [];
         }
+    }
+
+    /**
+     * Per-note location labels for the notes list. Default 'page' mode shows
+     * the estimated page IN THE WHOLE PROJECT: cumulative words of every file
+     * before this one in tree order, plus words above the anchor line in its
+     * own file, divided by words-per-page. 'line' mode shows the raw line.
+     * Reads go through cachedRead, so repeat renders are memory-cheap.
+     */
+    private async computeSceneNoteLocations(
+        entries: Array<{ owner: BookOwner; note: SceneNote }>,
+        orderedFiles: string[]
+    ): Promise<Map<string, string>> {
+        const labels = new Map<string, string>();
+        const lineLabel = (note: SceneNote) => `Line ${note.fromLine + 1}`;
+        const mode = this.plugin.settings.sceneNoteLocationDisplay === 'line' ? 'line' : 'page';
+        if (mode === 'line' || entries.length === 0) {
+            entries.forEach(({ note }) => labels.set(note.id, lineLabel(note)));
+            return labels;
+        }
+
+        const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
+        const folderPath = entries[0].owner.folderPath;
+        const countWords = (text: string) => this.plugin.statsManager.countWords(text);
+
+        // Cumulative word offsets, file by file in tree order.
+        const offsets = new Map<string, number>();
+        const contents = new Map<string, string>();
+        let running = 0;
+        for (const rel of orderedFiles) {
+            const full = `${folderPath}/${rel}`;
+            offsets.set(full, running);
+            const f = this.app.vault.getAbstractFileByPath(full);
+            if (f instanceof TFile && f.extension === 'md') {
+                try {
+                    const content = await this.app.vault.cachedRead(f);
+                    contents.set(full, content);
+                    running += countWords(content);
+                } catch { /* unreadable file counts as 0 words */ }
+            }
+        }
+
+        for (const { note } of entries) {
+            const offset = offsets.get(note.filePath);
+            const content = contents.get(note.filePath);
+            if (offset === undefined || content === undefined) {
+                // File not in the tree order (edge case) — fall back to line.
+                labels.set(note.id, lineLabel(note));
+                continue;
+            }
+            const upToLine = content.split('\n').slice(0, note.fromLine + 1).join('\n');
+            const wordsBefore = offset + countWords(upToLine);
+            labels.set(note.id, `Page ${Math.floor(wordsBefore / wordsPerPage) + 1}`);
+        }
+        return labels;
     }
 
     /**
@@ -2264,7 +2333,8 @@ export class ToolView extends ItemView {
         container: HTMLElement,
         projectEntries: Array<{ owner: BookOwner; note: SceneNote }>,
         orderedFiles: string[],
-        activeBookId: string | null
+        activeBookId: string | null,
+        locationLabels: Map<string, string> = new Map()
     ): void {
         container.empty();
 
@@ -2320,26 +2390,32 @@ export class ToolView extends ItemView {
 
                     const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
 
-                    // Title row: real title or greyed-out content fallback.
+                    const locLabel = locationLabels.get(note.id) ?? `Line ${note.fromLine + 1}`;
+
+                    // Title row: real title or greyed-out content fallback, plus
+                    // a location chip that only shows in compact mode (where the
+                    // meta line below is hidden).
                     const noteTitle = note.title?.trim();
                     const hasTitle = !!noteTitle;
                     const titleEl = body.createDiv({ cls: 'book-smith-scene-notes-row-title' });
+                    const titleTextEl = titleEl.createSpan({ cls: 'book-smith-scene-notes-row-title-text' });
                     if (hasTitle) {
-                        titleEl.setText(noteTitle!);
+                        titleTextEl.setText(noteTitle!);
                     } else {
                         const fallback = (note.content || '').trim().split('\n')[0] || '(empty note)';
-                        titleEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
+                        titleTextEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
                         titleEl.addClass('is-placeholder');
                     }
+                    titleEl.createSpan({ cls: 'book-smith-scene-notes-row-loc', text: locLabel });
 
-                    // Meta: created date + anchor line.
+                    // Meta: created date + anchor location (page or line).
                     const createdDate = note.createdAt ? new Date(note.createdAt) : null;
                     const dateStr = createdDate
                         ? createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
                         : '';
                     body.createDiv({
                         cls: 'book-smith-scene-notes-row-meta',
-                        text: [dateStr, `Line ${note.fromLine + 1}`].filter(Boolean).join(' · ')
+                        text: [dateStr, locLabel].filter(Boolean).join(' · ')
                     });
 
                     row.dataset.noteId = note.id;
@@ -2389,6 +2465,12 @@ export class ToolView extends ItemView {
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
                 handle.removeClass('is-dragging');
+                // Persist the final height so the split survives view
+                // teardowns and app reloads (saved once per drag, not per move).
+                if (this.sceneNotesTextareaHeight !== null) {
+                    this.plugin.settings.sceneNotesEditorHeight = Math.round(this.sceneNotesTextareaHeight);
+                    void this.plugin.saveSettings();
+                }
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
@@ -2580,7 +2662,19 @@ export class ToolView extends ItemView {
             await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
         });
 
-        editor.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+        const noteLabelRow = editor.createDiv({ cls: 'book-smith-scene-notes-note-label-row' });
+        noteLabelRow.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+        const fontControls = noteLabelRow.createDiv({ cls: 'book-smith-scene-notes-font-controls' });
+        const fontMinusBtn = fontControls.createEl('button', {
+            cls: 'book-smith-scene-notes-font-btn',
+            text: '−',
+            attr: { type: 'button', 'aria-label': 'Smaller note text' }
+        });
+        const fontPlusBtn = fontControls.createEl('button', {
+            cls: 'book-smith-scene-notes-font-btn',
+            text: '+',
+            attr: { type: 'button', 'aria-label': 'Larger note text' }
+        });
 
         // The textarea is rendered with transparent text — the *visible* text
         // comes from the `mirror` div sitting in front of it (pointer-events
@@ -2598,13 +2692,37 @@ export class ToolView extends ItemView {
         textarea.value = note.content || '';
         // Apply any user-chosen height from the divider drag so switching notes
         // preserves the size; otherwise the CSS min-height (120px) defaults in.
-        if (this.sceneNotesTextareaHeight !== null) {
-            textarea.style.height = `${this.sceneNotesTextareaHeight}px`;
+        // Instance value (live drag) wins; otherwise the persisted setting from
+        // a previous session; otherwise the CSS min-height default.
+        const savedEditorHeight = this.sceneNotesTextareaHeight
+            ?? this.plugin.settings.sceneNotesEditorHeight
+            ?? null;
+        if (savedEditorHeight !== null) {
+            textarea.style.height = `${savedEditorHeight}px`;
         }
         const mirror = textareaWrap.createDiv({
             cls: 'book-smith-scene-notes-textarea-mirror',
             attr: { 'aria-hidden': 'true' }
         });
+
+        // Note-text size: one CSS variable on the wrap drives BOTH layers
+        // (textarea + mirror must stay in lockstep or the caret drifts from
+        // the visible text). The +/- buttons step the persisted em value.
+        const applyNoteFont = () => {
+            const em = this.plugin.settings.sceneNoteFontEm ?? 0.9;
+            textareaWrap.style.setProperty('--bs-scene-note-font', `${em}em`);
+        };
+        const stepNoteFont = async (delta: number) => {
+            const current = this.plugin.settings.sceneNoteFontEm ?? 0.9;
+            const next = Math.min(1.6, Math.max(0.6, Math.round((current + delta) * 10) / 10));
+            if (next === current) return;
+            this.plugin.settings.sceneNoteFontEm = next;
+            await this.plugin.saveSettings();
+            applyNoteFont();
+        };
+        fontMinusBtn.addEventListener('click', () => void stepNoteFont(-0.1));
+        fontPlusBtn.addEventListener('click', () => void stepNoteFont(0.1));
+        applyNoteFont();
 
         const escapeHtml = (s: string) =>
             s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
