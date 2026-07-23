@@ -161,6 +161,10 @@ export interface BookSmithSettings {
             streak: boolean;
             /** How the streak stat renders: kept weeks, or writing days in the chain. */
             streakUnit?: 'weeks' | 'days';
+            /** When true, editing days (words added but deletions cancelled
+             *  them out) count toward the streak, aligned with Writing Days.
+             *  Default off: only net new words count. */
+            streakCountEditing?: boolean;
             /** Display order of the stat rows (keys from LEFT_PANE_STAT_KEYS). */
             order: string[];
         };
@@ -294,6 +298,7 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
             currentFile: true,
             streak: true,
             streakUnit: 'weeks',
+            streakCountEditing: false,
             order: [...LEFT_PANE_STAT_KEYS]
         }
     }

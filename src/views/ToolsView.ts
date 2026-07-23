@@ -11,7 +11,7 @@ import { SceneNote } from '../types/sceneNote';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { ToolsViewStats } from './ToolsViewStats';
-import { classifyStreakDays, StreakDayClass, normalizeStreakPeriods, getWeekQuotaDays, getWeekStartISO } from '../utils/writingStreak';
+import { classifyStreakDays, StreakDayClass, normalizeStreakPeriods, getWeekQuotaDays, getWeekStartISO, streakDayValue, computeStreakHistory } from '../utils/writingStreak';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -57,6 +57,8 @@ export class ToolView extends ItemView {
     public wordsPerPage = 250;
     public statsSettingsOpen = false;
     public statsPeriodSettingsOpen = false;
+    public statsStreakBoardOpen = false;
+    public statsBoardTab: 'streaks' | 'records' = 'streaks';
     public statsSourceMenuOpen = false;
     public statsYearEditing = false;
     public statsRefreshTimer: number | null = null;
@@ -1225,12 +1227,14 @@ export class ToolView extends ItemView {
      * book over the visible month, or null when streak view is off / source is
      * Global (a streak needs one project's schedule to judge against).
      */
-    private getStreakClassesForCalendar(): Map<string, StreakDayClass> | null {
-        if (this.plugin.settings.stats?.calendarView !== 'streak') return null;
-        if (this.statsSourceBookId === 'global') return null;
-        const book = this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId);
-        if (!book) return null;
-
+    /**
+     * Shared streak inputs for the selected stats book (calendar Streak view
+     * and the streak board): normalized periods, the day-value function
+     * (respecting the count-editing option), and today's logical date. Null
+     * when the source is Global (streaks need one project's schedule).
+     */
+    /** Streak inputs (periods + day-value fn) for a specific book. */
+    private buildStreakInputs(book: Book): { periods: ReturnType<typeof normalizeStreakPeriods>; getDayValue: (iso: string) => number } {
         const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
         const created = book.basic?.created_at ? new Date(book.basic.created_at) : new Date();
         const fallbackStart = getLogicalDayISODate(
@@ -1238,17 +1242,276 @@ export class ToolView extends ItemView {
             rollover
         );
         const periods = normalizeStreakPeriods(book.stats?.writing_periods, fallbackStart);
-        const getDayValue = (iso: string): number => {
-            const entry = book.stats?.daily_progress?.[iso];
-            if (entry) return Math.max(0, entry.net_change || 0);
-            return Math.max(0, book.stats?.daily_words?.[iso] || 0);
-        };
-        const today = getLogicalDayISODate(new Date(), rollover);
+        const countEditing = this.plugin.settings.bookView?.leftPanelInfo?.streakCountEditing === true;
+        const getDayValue = (iso: string): number => streakDayValue(
+            book.stats?.daily_progress?.[iso],
+            book.stats?.daily_words?.[iso] || 0,
+            countEditing
+        );
+        return { periods, getDayValue };
+    }
+
+    private getStreakContext(): { periods: ReturnType<typeof normalizeStreakPeriods>; getDayValue: (iso: string) => number; today: string } | null {
+        if (this.statsSourceBookId === 'global') return null;
+        const book = this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId);
+        if (!book) return null;
+        const { periods, getDayValue } = this.buildStreakInputs(book);
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        return { periods, getDayValue, today: getLogicalDayISODate(new Date(), rollover) };
+    }
+
+    private getStreakClassesForCalendar(): Map<string, StreakDayClass> | null {
+        if (this.plugin.settings.stats?.calendarView !== 'streak') return null;
+        const ctx = this.getStreakContext();
+        if (!ctx) return null;
         const year = this.statsViewMonth.getFullYear();
         const month = this.statsViewMonth.getMonth();
         const rangeStart = this.toLocalISODate(new Date(year, month, 1));
         const rangeEnd = this.toLocalISODate(new Date(year, month + 1, 0));
-        return classifyStreakDays(periods, getDayValue, today, rangeStart, rangeEnd);
+        return classifyStreakDays(ctx.periods, ctx.getDayValue, ctx.today, rangeStart, rangeEnd);
+    }
+
+    /** Streak board: every streak the project has had, best first. */
+    public renderStreakBoardPanel(container: HTMLElement) {
+        const panel = container.createDiv({ cls: 'book-smith-stats-settings-panel is-active-streaks' });
+        panel.createEl('div', { cls: 'book-smith-streak-board-title', text: 'Streaks & Records' });
+
+        // Segmented tab selector — one section at a time keeps the panel tidy.
+        const tabs = panel.createDiv({ cls: 'book-smith-streak-board-tabs' });
+        (['streaks', 'records'] as const).forEach((tab) => {
+            const btn = tabs.createEl('button', {
+                cls: `book-smith-streak-board-tab${this.statsBoardTab === tab ? ' is-active' : ''}`,
+                text: tab === 'streaks' ? 'Streaks' : 'Records',
+                attr: { type: 'button' }
+            });
+            btn.addEventListener('click', () => {
+                if (this.statsBoardTab === tab) return;
+                this.statsBoardTab = tab;
+                this.redrawStatisticsView();
+            });
+        });
+
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        const today = getLogicalDayISODate(new Date(), rollover);
+
+        if (this.statsBoardTab === 'records') {
+            this.renderRecordsSection(panel, today);
+            return;
+        }
+
+        // Global = a leaderboard across ALL projects, each judged by its own
+        // schedule/threshold. A single project = just that project's history.
+        type Row = { weeks: number; daysWritten: number; ongoing: boolean; startWeekIso: string; endWeekIso: string; project?: string };
+        let rows: Row[] = [];
+        if (this.statsSourceBookId === 'global') {
+            for (const book of this.statsBooks) {
+                const { periods, getDayValue } = this.buildStreakInputs(book);
+                computeStreakHistory(periods, getDayValue, today).forEach((seg) => {
+                    rows.push({ ...seg, project: book.basic.title });
+                });
+            }
+        } else {
+            const ctx = this.getStreakContext();
+            if (!ctx) {
+                panel.createEl('p', { cls: 'book-smith-streak-board-empty', text: 'No project selected.' });
+                return;
+            }
+            rows = computeStreakHistory(ctx.periods, ctx.getDayValue, ctx.today);
+        }
+
+        rows.sort((a, b) => b.weeks - a.weeks || b.daysWritten - a.daysWritten);
+        rows = rows.slice(0, 8);
+
+        if (rows.length === 0) {
+            panel.createEl('p', {
+                cls: 'book-smith-streak-board-empty',
+                text: 'No streaks yet — keep one scheduled week to start your first.'
+            });
+            return;
+        }
+
+        const fmtDate = (iso: string) => new Date(`${iso}T12:00:00`)
+            .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+        rows.forEach((seg, index) => {
+            const row = panel.createDiv({ cls: 'book-smith-streak-board-row is-clickable' });
+            row.createSpan({ cls: 'book-smith-streak-board-rank', text: `#${index + 1}` });
+            const body = row.createDiv({ cls: 'book-smith-streak-board-body' });
+            const headline = body.createDiv({ cls: 'book-smith-streak-board-headline' });
+            headline.createSpan({
+                cls: 'book-smith-streak-board-weeks',
+                text: `${seg.weeks} ${seg.weeks === 1 ? 'week' : 'weeks'}`
+            });
+            if (seg.ongoing) {
+                headline.createSpan({ cls: 'book-smith-streak-board-ongoing', text: 'ongoing' });
+            }
+            const spanEnd = seg.endWeekIso <= today ? seg.endWeekIso : today;
+            const parts = [
+                seg.project,
+                `${fmtDate(seg.startWeekIso)} – ${seg.ongoing ? 'today' : fmtDate(spanEnd)}`,
+                `${seg.daysWritten} ${seg.daysWritten === 1 ? 'day' : 'days'} written`
+            ].filter(Boolean);
+            body.createDiv({ cls: 'book-smith-streak-board-meta', text: parts.join(' · ') });
+            row.addEventListener('click', () => this.jumpToStatsDate(seg.startWeekIso));
+        });
+    }
+
+    /** Close the board and land the calendar on a specific date. */
+    private jumpToStatsDate(iso: string) {
+        const d = new Date(`${iso}T12:00:00`);
+        this.statsViewMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+        this.selectedStatsDate = iso;
+        this.statsPeriodMode = 'day';
+        this.statsStreakBoardOpen = false;
+        this.redrawStatisticsView();
+    }
+
+    /**
+     * Records: best days / week / month from the current stats source's data,
+     * measured on the current display + progress-display basis (same numbers
+     * the calendar shows). Every row jumps to its spot in the calendar.
+     */
+    /** A book's words for a day, on the current progress-display basis. */
+    private getBookDayWords(book: Book, iso: string): number {
+        const entry = book.stats?.daily_progress?.[iso];
+        if (entry) {
+            const mode = this.statsWritingDisplayMode;
+            if (mode === 'daily-output') return Math.max(0, entry.net_change || 0);
+            if (mode === 'raw') {
+                return (entry.words_added ?? entry.positive_change ?? 0)
+                    - (entry.words_deleted ?? Math.abs(entry.negative_change || 0));
+            }
+            return entry.net_change || 0;
+        }
+        return book.stats?.daily_words?.[iso] || 0;
+    }
+
+    /**
+     * In Global mode, break a record down by project WITH per-project values —
+     * "Brusque 5.3 + Project X 4" — so a split day shows its split. A single
+     * contributor shows just the name (the headline already has the value).
+     * Null for single-project sources and time-based display modes.
+     */
+    private getContributionBreakdown(isos: string[]): string | null {
+        if (this.statsSourceBookId !== 'global') return null;
+        if (this.statsDisplayMode !== 'words' && this.statsDisplayMode !== 'pages') return null;
+        const totals: Array<{ title: string; words: number }> = [];
+        for (const book of this.statsBooks) {
+            let sum = 0;
+            for (const iso of isos) sum += Math.max(0, this.getBookDayWords(book, iso));
+            if (sum > 0) totals.push({ title: book.basic.title, words: sum });
+        }
+        if (totals.length === 0) return null;
+        totals.sort((a, b) => b.words - a.words);
+        if (totals.length === 1) return totals[0].title;
+
+        const fmt = (words: number): string => {
+            if (this.statsDisplayMode === 'pages') {
+                const pages = words / (this.wordsPerPage || 250);
+                return Number.isInteger(pages) ? String(pages) : pages.toFixed(1).replace(/\.0$/, '');
+            }
+            return Math.round(words).toLocaleString('en-US');
+        };
+        const shown = totals.slice(0, 3).map((t) => `${t.title} ${fmt(t.words)}`);
+        const more = totals.length - 3;
+        return shown.join(' + ') + (more > 0 ? ` +${more} more` : '');
+    }
+
+    private renderRecordsSection(panel: HTMLElement, today: string) {
+        // Every day with recorded activity, valued like a calendar cell.
+        const dayIsos = new Set<string>([
+            ...Object.keys(this.statsDailyWords || {}),
+            ...Object.keys(this.statsDailyProgress || {})
+        ].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today));
+
+        const days: Array<{ iso: string; v: number }> = [];
+        dayIsos.forEach((iso) => {
+            const v = this.getMetricForPeriod(new Date(`${iso}T12:00:00`));
+            if (v > 0) days.push({ iso, v });
+        });
+
+        if (days.length === 0) {
+            panel.createEl('p', { cls: 'book-smith-streak-board-empty', text: 'No recorded days yet.' });
+            return;
+        }
+
+        const unit = this.statsDisplayMode === 'pages' ? 'pages'
+            : this.statsDisplayMode === 'pomodoros' ? 'pomodoros'
+                : this.statsDisplayMode === 'hours' ? 'h'
+                    : 'words';
+        const fmtVal = (v: number) => `${this.getDayMetricShortText(v)} ${unit}`;
+        const fmtDate = (iso: string) => new Date(`${iso}T12:00:00`)
+            .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+        const addRecordRow = (rank: string, headlineText: string, meta: string[], jumpIso: string, commentIso?: string) => {
+            const row = panel.createDiv({ cls: 'book-smith-streak-board-row is-clickable' });
+            row.createSpan({ cls: 'book-smith-streak-board-rank', text: rank });
+            const body = row.createDiv({ cls: 'book-smith-streak-board-body' });
+            body.createDiv({ cls: 'book-smith-streak-board-headline' })
+                .createSpan({ cls: 'book-smith-streak-board-weeks', text: headlineText });
+            body.createDiv({ cls: 'book-smith-streak-board-meta', text: meta.join(' · ') });
+            const comment = commentIso ? this.statsDailyComments?.[commentIso]?.trim() : '';
+            if (comment) {
+                const preview = comment.split('\n')[0];
+                body.createDiv({
+                    cls: 'book-smith-streak-board-comment',
+                    text: `“${preview.length > 60 ? preview.slice(0, 60) + '…' : preview}”`
+                });
+            }
+            row.addEventListener('click', () => this.jumpToStatsDate(jumpIso));
+        };
+
+        // Best days (top 3), attributed to their project in Global mode.
+        const topDays = [...days].sort((a, b) => b.v - a.v).slice(0, 3);
+        topDays.forEach((d, i) => {
+            const meta = [fmtDate(d.iso)];
+            const who = this.getContributionBreakdown([d.iso]);
+            if (who) meta.push(who);
+            addRecordRow(i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉', fmtVal(d.v), meta, d.iso, d.iso);
+        });
+
+        // Best week (Mon-start) and best month, each remembering its best day
+        // so the click lands somewhere meaningful.
+        const weekAgg = new Map<string, { sum: number; bestIso: string; bestV: number }>();
+        const monthAgg = new Map<string, { sum: number; bestIso: string; bestV: number }>();
+        days.forEach(({ iso, v }) => {
+            const wk = getWeekStartISO(iso);
+            const mo = iso.slice(0, 7);
+            const w = weekAgg.get(wk) || { sum: 0, bestIso: iso, bestV: 0 };
+            w.sum += v; if (v > w.bestV) { w.bestV = v; w.bestIso = iso; }
+            weekAgg.set(wk, w);
+            const m = monthAgg.get(mo) || { sum: 0, bestIso: iso, bestV: 0 };
+            m.sum += v; if (v > m.bestV) { m.bestV = v; m.bestIso = iso; }
+            monthAgg.set(mo, m);
+        });
+
+        const bestWeek = [...weekAgg.entries()].sort((a, b) => b[1].sum - a[1].sum)[0];
+        if (bestWeek) {
+            const [wk, agg] = bestWeek;
+            const spanDays = days.filter((d) => d.iso >= wk && d.iso <= this.shiftIso(wk, 6)).map((d) => d.iso);
+            const meta = [`${fmtDate(wk)} – ${fmtDate(this.shiftIso(wk, 6))}`];
+            const who = this.getContributionBreakdown(spanDays);
+            if (who) meta.push(who);
+            addRecordRow('📅', `${fmtVal(agg.sum)} in a week`, meta, agg.bestIso);
+        }
+
+        const bestMonth = [...monthAgg.entries()].sort((a, b) => b[1].sum - a[1].sum)[0];
+        if (bestMonth) {
+            const [mo, agg] = bestMonth;
+            const monthName = new Date(`${mo}-01T12:00:00`)
+                .toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+            const spanDays = days.filter((d) => d.iso.startsWith(mo)).map((d) => d.iso);
+            const meta = [monthName];
+            const who = this.getContributionBreakdown(spanDays);
+            if (who) meta.push(who);
+            addRecordRow('🗓', `${fmtVal(agg.sum)} in a month`, meta, agg.bestIso);
+        }
+    }
+
+    private shiftIso(iso: string, deltaDays: number): string {
+        const d = new Date(`${iso}T12:00:00`);
+        d.setDate(d.getDate() + deltaDays);
+        return this.toLocalISODate(d);
     }
 
     private renderCalendarDays(grid: HTMLElement) {
@@ -1357,11 +1620,14 @@ export class ToolView extends ItemView {
             ? null
             : this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId) || null;
 
-        const getDayValue = (iso: string): number => {
-            const entry = book?.stats?.daily_progress?.[iso];
-            if (entry) return Math.max(0, entry.net_change || 0);
-            return Math.max(0, book?.stats?.daily_words?.[iso] || 0);
-        };
+        // Same day-value basis as the streak (incl. the count-editing option),
+        // so the quota list agrees with the streak about what "written" means.
+        const streakCountEditing = this.plugin.settings.bookView?.leftPanelInfo?.streakCountEditing === true;
+        const getDayValue = (iso: string): number => streakDayValue(
+            book?.stats?.daily_progress?.[iso],
+            book?.stats?.daily_words?.[iso] || 0,
+            streakCountEditing
+        );
 
         // Period coverage + how far back "all history" reaches.
         let periods: ReturnType<typeof normalizeStreakPeriods> | null = null;

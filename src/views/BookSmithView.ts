@@ -12,7 +12,7 @@ import { i18n } from '../i18n/i18n';
 import { formatWordCount } from '../utils/wordCount';
 import { BookViewSettingsModal } from '../modals/BookViewSettingsModal';
 import { LeftPaneStatKey, LEFT_PANE_STAT_VISIBILITY_FIELD, LEFT_PANE_STAT_DEFAULT_VISIBLE, sanitizeLeftPaneStatOrder } from '../settings/settings';
-import { StreakInfo, computeStreakInfo } from '../utils/writingStreak';
+import { StreakInfo, computeStreakInfo, streakDayValue } from '../utils/writingStreak';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -794,11 +794,13 @@ export class BookSmithView extends ItemView {
 
     // === Writing streak (semantics live in utils/writingStreak.ts) ===
 
-    /** Net words written on a date (daily-output basis, mode-independent). */
+    /** Day value for streak purposes (respects the count-editing option). */
     private getStreakDayValue(date: string): number {
-        const entry = this.currentBook?.stats?.daily_progress?.[date];
-        if (entry) return Math.max(0, entry.net_change || 0);
-        return Math.max(0, this.currentBook?.stats?.daily_words?.[date] || 0);
+        return streakDayValue(
+            this.currentBook?.stats?.daily_progress?.[date],
+            this.currentBook?.stats?.daily_words?.[date] || 0,
+            this.plugin.settings.bookView?.leftPanelInfo?.streakCountEditing === true
+        );
     }
 
     private getWritingStreakInfo(): StreakInfo | null {

@@ -234,6 +234,19 @@ export class BookViewSettingsModal extends Modal {
             });
 
         new Setting(detail)
+            .setName('Streak counts editing')
+            .setDesc('When on, days where you added words count toward the streak even if deletions cancelled them out (aligned with Writing Days). Off: only net new words count. The writing-day threshold still applies either way.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(this.plugin.settings.bookView.leftPanelInfo.streakCountEditing === true)
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookView.leftPanelInfo.streakCountEditing = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        new Setting(detail)
             .addButton(btn => btn
                 .setButtonText('Reset to default order')
                 .setTooltip('Restore the original order and default visibility')

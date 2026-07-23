@@ -392,7 +392,8 @@
     transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.book-smith-stats-period-btn {
+.book-smith-stats-period-btn,
+.book-smith-stats-streaks-btn {
     border: 1px solid var(--background-modifier-border);
     border-radius: 6px;
     background: var(--background-secondary);
@@ -406,22 +407,126 @@
 }
 
 .book-smith-stats-settings-btn:hover,
-.book-smith-stats-period-btn:hover {
+.book-smith-stats-period-btn:hover,
+.book-smith-stats-streaks-btn:hover {
     background: var(--background-modifier-hover);
 }
 
 .book-smith-stats-settings-btn.is-active,
-.book-smith-stats-period-btn.is-active {
+.book-smith-stats-period-btn.is-active,
+.book-smith-stats-streaks-btn.is-active {
     border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
     background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent) inset;
 }
 
 .book-smith-stats-settings-btn.is-active:hover,
-.book-smith-stats-period-btn.is-active:hover {
+.book-smith-stats-period-btn.is-active:hover,
+.book-smith-stats-streaks-btn.is-active:hover {
     border-color: color-mix(in srgb, var(--interactive-accent) 62%, var(--background-modifier-border));
     background: color-mix(in srgb, var(--interactive-accent) 27%, var(--background-secondary));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 28%, transparent) inset;
+}
+
+/* Streak board — panel listing the project's best streaks. */
+.book-smith-streak-board-title {
+    font-weight: 600;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 6px;
+}
+.book-smith-streak-board-empty {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin: 4px 0 0;
+}
+.book-smith-streak-board-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 5px 2px;
+}
+.book-smith-streak-board-row + .book-smith-streak-board-row {
+    border-top: 1px solid var(--background-modifier-border);
+}
+.book-smith-streak-board-rank {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    min-width: 22px;
+}
+.book-smith-streak-board-body {
+    min-width: 0;
+}
+.book-smith-streak-board-headline {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.book-smith-streak-board-weeks {
+    font-weight: 600;
+}
+.book-smith-streak-board-ongoing {
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-green, #2f9e44);
+    border: 1px solid color-mix(in srgb, var(--color-green, #2f9e44) 45%, transparent);
+    border-radius: 4px;
+    padding: 0 5px;
+}
+.book-smith-streak-board-meta {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    margin-top: 1px;
+}
+/* Segmented Streaks | Records selector. */
+.book-smith-streak-board-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    margin: 2px 0 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 7px;
+    background: var(--background-primary-alt);
+}
+.book-smith-streak-board-tab {
+    flex: 1;
+    padding: 4px 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.88em;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.book-smith-streak-board-tab:hover {
+    color: var(--text-normal);
+}
+.book-smith-streak-board-tab.is-active {
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-weight: 600;
+    box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+}
+.book-smith-streak-board-row.is-clickable {
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background-color 0.1s ease;
+}
+.book-smith-streak-board-row.is-clickable:hover {
+    background: var(--background-modifier-hover);
+}
+.book-smith-streak-board-comment {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    font-style: italic;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .book-smith-stats-source-row {

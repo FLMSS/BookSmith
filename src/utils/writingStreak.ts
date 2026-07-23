@@ -227,6 +227,103 @@ export function getWeekQuotaDays(
     return { written, missed };
 }
 
+/**
+ * Day value for streak purposes, from a daily_progress entry.
+ * countEditing=false: only net new words count (a heavy-deletion day is 0).
+ * countEditing=true : words ADDED also count even when deletions cancelled
+ * them out — editing days keep the streak, aligned with Writing Days.
+ */
+export function streakDayValue(
+    entry: { net_change?: number; words_added?: number; positive_change?: number } | undefined,
+    fallbackWords: number,
+    countEditing: boolean
+): number {
+    if (!entry) return Math.max(0, fallbackWords || 0);
+    const net = Math.max(0, entry.net_change || 0);
+    if (!countEditing) return net;
+    const added = Math.max(0, entry.words_added ?? entry.positive_change ?? 0);
+    return Math.max(net, added);
+}
+
+/** One historical streak: a maximal run of kept weeks (neutral gaps allowed). */
+export interface StreakSegment {
+    /** Monday of the first kept week. */
+    startWeekIso: string;
+    /** Monday of the last kept week. */
+    endWeekIso: string;
+    /** Kept weeks in the run (neutral gap weeks don't count or break). */
+    weeks: number;
+    /** Threshold-met days across the run's span. */
+    daysWritten: number;
+    /** Still alive today (no break since). */
+    ongoing: boolean;
+}
+
+/**
+ * Every streak the project has ever had, oldest first. Same week semantics as
+ * the live streak: kept weeks extend, neutral weeks pause, a failed past week
+ * breaks; the current in-progress week never breaks (and counts once met).
+ */
+export function computeStreakHistory(
+    periods: StreakPeriod[],
+    getDayValue: (iso: string) => number,
+    todayIso: string
+): StreakSegment[] {
+    const segments: StreakSegment[] = [];
+    if (periods.length === 0) return segments;
+
+    const earliestStart = periods.reduce(
+        (min, p) => (p.startDate < min ? p.startDate : min),
+        periods[0].startDate
+    );
+    const currentWeek = weekStartISO(todayIso);
+
+    let open: { start: string; end: string; weeks: number } | null = null;
+    const close = (ongoing: boolean) => {
+        if (!open) return;
+        segments.push({
+            startWeekIso: open.start,
+            endWeekIso: open.end,
+            weeks: open.weeks,
+            daysWritten: 0,
+            ongoing
+        });
+        open = null;
+    };
+
+    let week = weekStartISO(earliestStart);
+    for (let guard = 0; guard < 700 && week <= currentWeek; guard++, week = shiftISO(week, 7)) {
+        const isCurrent = week === currentWeek;
+        const { met, required } = evaluateWeek(week, isCurrent ? todayIso : null, periods, getDayValue);
+        if (required === 0) continue;               // neutral: pause, keep open
+        if (met >= required) {
+            if (!open) open = { start: week, end: week, weeks: 0 };
+            open.end = week;
+            open.weeks++;
+            continue;
+        }
+        if (isCurrent) break;                       // pending week can't break
+        close(false);
+    }
+    close(true); // anything still open reached today unbroken
+
+    // Count threshold-met days inside each segment's span.
+    for (const seg of segments) {
+        const spanEnd0 = shiftISO(seg.endWeekIso, 6);
+        const spanEnd = spanEnd0 < todayIso ? spanEnd0 : todayIso;
+        let day = seg.startWeekIso;
+        let count = 0;
+        while (day <= spanEnd) {
+            const period = activePeriodFor(day, periods);
+            if (period && getDayValue(day) >= period.thresholdWords) count++;
+            day = shiftISO(day, 1);
+        }
+        seg.daysWritten = count;
+    }
+
+    return segments;
+}
+
 export type StreakDayClass = 'full' | 'light' | 'red';
 
 /**
