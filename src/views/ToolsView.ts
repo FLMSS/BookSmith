@@ -11,7 +11,7 @@ import { SceneNote } from '../types/sceneNote';
 import { NavigatorFolderModal } from '../modals/NavigatorFolderModal';
 import { getLogicalDayISODate } from '../utils/logicalDay';
 import { ToolsViewStats } from './ToolsViewStats';
-import { classifyStreakDays, StreakDayClass, normalizeStreakPeriods, getWeekQuotaDays, getWeekStartISO } from '../utils/writingStreak';
+import { classifyStreakDays, StreakDayClass, normalizeStreakPeriods, getWeekQuotaDays, getWeekStartISO, streakDayValue, computeStreakHistory } from '../utils/writingStreak';
 
 type DailyProgressEntry = {
     positive_change: number;
@@ -57,6 +57,8 @@ export class ToolView extends ItemView {
     public wordsPerPage = 250;
     public statsSettingsOpen = false;
     public statsPeriodSettingsOpen = false;
+    public statsStreakBoardOpen = false;
+    public statsBoardTab: 'streaks' | 'records' = 'streaks';
     public statsSourceMenuOpen = false;
     public statsYearEditing = false;
     public statsRefreshTimer: number | null = null;
@@ -373,7 +375,12 @@ export class ToolView extends ItemView {
                     : i18n.t('SELECT_FOLDER')
             }
         });
-        setIcon(folderButton, 'folder-cog');
+        // Same 'folder' Lucide icon as the left-pane tree. NB: setIcon must go
+        // into a SPAN inside the button, not the button itself — icons set
+        // directly on these square buttons rendered broken (the left-pane tree
+        // and the navigator file rows both use the span pattern and work).
+        const folderIconSpan = folderButton.createSpan({ cls: 'book-smith-navigator-folder-glyph' });
+        setIcon(folderIconSpan, 'folder');
         folderButton.addEventListener('click', () => this.openNavigatorFolderPicker());
 
         if (!this.navigatorBook) {
@@ -1220,12 +1227,14 @@ export class ToolView extends ItemView {
      * book over the visible month, or null when streak view is off / source is
      * Global (a streak needs one project's schedule to judge against).
      */
-    private getStreakClassesForCalendar(): Map<string, StreakDayClass> | null {
-        if (this.plugin.settings.stats?.calendarView !== 'streak') return null;
-        if (this.statsSourceBookId === 'global') return null;
-        const book = this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId);
-        if (!book) return null;
-
+    /**
+     * Shared streak inputs for the selected stats book (calendar Streak view
+     * and the streak board): normalized periods, the day-value function
+     * (respecting the count-editing option), and today's logical date. Null
+     * when the source is Global (streaks need one project's schedule).
+     */
+    /** Streak inputs (periods + day-value fn) for a specific book. */
+    private buildStreakInputs(book: Book): { periods: ReturnType<typeof normalizeStreakPeriods>; getDayValue: (iso: string) => number } {
         const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
         const created = book.basic?.created_at ? new Date(book.basic.created_at) : new Date();
         const fallbackStart = getLogicalDayISODate(
@@ -1233,17 +1242,276 @@ export class ToolView extends ItemView {
             rollover
         );
         const periods = normalizeStreakPeriods(book.stats?.writing_periods, fallbackStart);
-        const getDayValue = (iso: string): number => {
-            const entry = book.stats?.daily_progress?.[iso];
-            if (entry) return Math.max(0, entry.net_change || 0);
-            return Math.max(0, book.stats?.daily_words?.[iso] || 0);
-        };
-        const today = getLogicalDayISODate(new Date(), rollover);
+        const countEditing = this.plugin.settings.bookView?.leftPanelInfo?.streakCountEditing === true;
+        const getDayValue = (iso: string): number => streakDayValue(
+            book.stats?.daily_progress?.[iso],
+            book.stats?.daily_words?.[iso] || 0,
+            countEditing
+        );
+        return { periods, getDayValue };
+    }
+
+    private getStreakContext(): { periods: ReturnType<typeof normalizeStreakPeriods>; getDayValue: (iso: string) => number; today: string } | null {
+        if (this.statsSourceBookId === 'global') return null;
+        const book = this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId);
+        if (!book) return null;
+        const { periods, getDayValue } = this.buildStreakInputs(book);
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        return { periods, getDayValue, today: getLogicalDayISODate(new Date(), rollover) };
+    }
+
+    private getStreakClassesForCalendar(): Map<string, StreakDayClass> | null {
+        if (this.plugin.settings.stats?.calendarView !== 'streak') return null;
+        const ctx = this.getStreakContext();
+        if (!ctx) return null;
         const year = this.statsViewMonth.getFullYear();
         const month = this.statsViewMonth.getMonth();
         const rangeStart = this.toLocalISODate(new Date(year, month, 1));
         const rangeEnd = this.toLocalISODate(new Date(year, month + 1, 0));
-        return classifyStreakDays(periods, getDayValue, today, rangeStart, rangeEnd);
+        return classifyStreakDays(ctx.periods, ctx.getDayValue, ctx.today, rangeStart, rangeEnd);
+    }
+
+    /** Streak board: every streak the project has had, best first. */
+    public renderStreakBoardPanel(container: HTMLElement) {
+        const panel = container.createDiv({ cls: 'book-smith-stats-settings-panel is-active-streaks' });
+        panel.createEl('div', { cls: 'book-smith-streak-board-title', text: 'Streaks & Records' });
+
+        // Segmented tab selector — one section at a time keeps the panel tidy.
+        const tabs = panel.createDiv({ cls: 'book-smith-streak-board-tabs' });
+        (['streaks', 'records'] as const).forEach((tab) => {
+            const btn = tabs.createEl('button', {
+                cls: `book-smith-streak-board-tab${this.statsBoardTab === tab ? ' is-active' : ''}`,
+                text: tab === 'streaks' ? 'Streaks' : 'Records',
+                attr: { type: 'button' }
+            });
+            btn.addEventListener('click', () => {
+                if (this.statsBoardTab === tab) return;
+                this.statsBoardTab = tab;
+                this.redrawStatisticsView();
+            });
+        });
+
+        const rollover = this.plugin.settings.focus.dailyRolloverMinutes;
+        const today = getLogicalDayISODate(new Date(), rollover);
+
+        if (this.statsBoardTab === 'records') {
+            this.renderRecordsSection(panel, today);
+            return;
+        }
+
+        // Global = a leaderboard across ALL projects, each judged by its own
+        // schedule/threshold. A single project = just that project's history.
+        type Row = { weeks: number; daysWritten: number; ongoing: boolean; startWeekIso: string; endWeekIso: string; project?: string };
+        let rows: Row[] = [];
+        if (this.statsSourceBookId === 'global') {
+            for (const book of this.statsBooks) {
+                const { periods, getDayValue } = this.buildStreakInputs(book);
+                computeStreakHistory(periods, getDayValue, today).forEach((seg) => {
+                    rows.push({ ...seg, project: book.basic.title });
+                });
+            }
+        } else {
+            const ctx = this.getStreakContext();
+            if (!ctx) {
+                panel.createEl('p', { cls: 'book-smith-streak-board-empty', text: 'No project selected.' });
+                return;
+            }
+            rows = computeStreakHistory(ctx.periods, ctx.getDayValue, ctx.today);
+        }
+
+        rows.sort((a, b) => b.weeks - a.weeks || b.daysWritten - a.daysWritten);
+        rows = rows.slice(0, 8);
+
+        if (rows.length === 0) {
+            panel.createEl('p', {
+                cls: 'book-smith-streak-board-empty',
+                text: 'No streaks yet — keep one scheduled week to start your first.'
+            });
+            return;
+        }
+
+        const fmtDate = (iso: string) => new Date(`${iso}T12:00:00`)
+            .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+        rows.forEach((seg, index) => {
+            const row = panel.createDiv({ cls: 'book-smith-streak-board-row is-clickable' });
+            row.createSpan({ cls: 'book-smith-streak-board-rank', text: `#${index + 1}` });
+            const body = row.createDiv({ cls: 'book-smith-streak-board-body' });
+            const headline = body.createDiv({ cls: 'book-smith-streak-board-headline' });
+            headline.createSpan({
+                cls: 'book-smith-streak-board-weeks',
+                text: `${seg.weeks} ${seg.weeks === 1 ? 'week' : 'weeks'}`
+            });
+            if (seg.ongoing) {
+                headline.createSpan({ cls: 'book-smith-streak-board-ongoing', text: 'ongoing' });
+            }
+            const spanEnd = seg.endWeekIso <= today ? seg.endWeekIso : today;
+            const parts = [
+                seg.project,
+                `${fmtDate(seg.startWeekIso)} – ${seg.ongoing ? 'today' : fmtDate(spanEnd)}`,
+                `${seg.daysWritten} ${seg.daysWritten === 1 ? 'day' : 'days'} written`
+            ].filter(Boolean);
+            body.createDiv({ cls: 'book-smith-streak-board-meta', text: parts.join(' · ') });
+            row.addEventListener('click', () => this.jumpToStatsDate(seg.startWeekIso));
+        });
+    }
+
+    /** Close the board and land the calendar on a specific date. */
+    private jumpToStatsDate(iso: string) {
+        const d = new Date(`${iso}T12:00:00`);
+        this.statsViewMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+        this.selectedStatsDate = iso;
+        this.statsPeriodMode = 'day';
+        this.statsStreakBoardOpen = false;
+        this.redrawStatisticsView();
+    }
+
+    /**
+     * Records: best days / week / month from the current stats source's data,
+     * measured on the current display + progress-display basis (same numbers
+     * the calendar shows). Every row jumps to its spot in the calendar.
+     */
+    /** A book's words for a day, on the current progress-display basis. */
+    private getBookDayWords(book: Book, iso: string): number {
+        const entry = book.stats?.daily_progress?.[iso];
+        if (entry) {
+            const mode = this.statsWritingDisplayMode;
+            if (mode === 'daily-output') return Math.max(0, entry.net_change || 0);
+            if (mode === 'raw') {
+                return (entry.words_added ?? entry.positive_change ?? 0)
+                    - (entry.words_deleted ?? Math.abs(entry.negative_change || 0));
+            }
+            return entry.net_change || 0;
+        }
+        return book.stats?.daily_words?.[iso] || 0;
+    }
+
+    /**
+     * In Global mode, break a record down by project WITH per-project values —
+     * "Brusque 5.3 + Project X 4" — so a split day shows its split. A single
+     * contributor shows just the name (the headline already has the value).
+     * Null for single-project sources and time-based display modes.
+     */
+    private getContributionBreakdown(isos: string[]): string | null {
+        if (this.statsSourceBookId !== 'global') return null;
+        if (this.statsDisplayMode !== 'words' && this.statsDisplayMode !== 'pages') return null;
+        const totals: Array<{ title: string; words: number }> = [];
+        for (const book of this.statsBooks) {
+            let sum = 0;
+            for (const iso of isos) sum += Math.max(0, this.getBookDayWords(book, iso));
+            if (sum > 0) totals.push({ title: book.basic.title, words: sum });
+        }
+        if (totals.length === 0) return null;
+        totals.sort((a, b) => b.words - a.words);
+        if (totals.length === 1) return totals[0].title;
+
+        const fmt = (words: number): string => {
+            if (this.statsDisplayMode === 'pages') {
+                const pages = words / (this.wordsPerPage || 250);
+                return Number.isInteger(pages) ? String(pages) : pages.toFixed(1).replace(/\.0$/, '');
+            }
+            return Math.round(words).toLocaleString('en-US');
+        };
+        const shown = totals.slice(0, 3).map((t) => `${t.title} ${fmt(t.words)}`);
+        const more = totals.length - 3;
+        return shown.join(' + ') + (more > 0 ? ` +${more} more` : '');
+    }
+
+    private renderRecordsSection(panel: HTMLElement, today: string) {
+        // Every day with recorded activity, valued like a calendar cell.
+        const dayIsos = new Set<string>([
+            ...Object.keys(this.statsDailyWords || {}),
+            ...Object.keys(this.statsDailyProgress || {})
+        ].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today));
+
+        const days: Array<{ iso: string; v: number }> = [];
+        dayIsos.forEach((iso) => {
+            const v = this.getMetricForPeriod(new Date(`${iso}T12:00:00`));
+            if (v > 0) days.push({ iso, v });
+        });
+
+        if (days.length === 0) {
+            panel.createEl('p', { cls: 'book-smith-streak-board-empty', text: 'No recorded days yet.' });
+            return;
+        }
+
+        const unit = this.statsDisplayMode === 'pages' ? 'pages'
+            : this.statsDisplayMode === 'pomodoros' ? 'pomodoros'
+                : this.statsDisplayMode === 'hours' ? 'h'
+                    : 'words';
+        const fmtVal = (v: number) => `${this.getDayMetricShortText(v)} ${unit}`;
+        const fmtDate = (iso: string) => new Date(`${iso}T12:00:00`)
+            .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+        const addRecordRow = (rank: string, headlineText: string, meta: string[], jumpIso: string, commentIso?: string) => {
+            const row = panel.createDiv({ cls: 'book-smith-streak-board-row is-clickable' });
+            row.createSpan({ cls: 'book-smith-streak-board-rank', text: rank });
+            const body = row.createDiv({ cls: 'book-smith-streak-board-body' });
+            body.createDiv({ cls: 'book-smith-streak-board-headline' })
+                .createSpan({ cls: 'book-smith-streak-board-weeks', text: headlineText });
+            body.createDiv({ cls: 'book-smith-streak-board-meta', text: meta.join(' · ') });
+            const comment = commentIso ? this.statsDailyComments?.[commentIso]?.trim() : '';
+            if (comment) {
+                const preview = comment.split('\n')[0];
+                body.createDiv({
+                    cls: 'book-smith-streak-board-comment',
+                    text: `“${preview.length > 60 ? preview.slice(0, 60) + '…' : preview}”`
+                });
+            }
+            row.addEventListener('click', () => this.jumpToStatsDate(jumpIso));
+        };
+
+        // Best days (top 3), attributed to their project in Global mode.
+        const topDays = [...days].sort((a, b) => b.v - a.v).slice(0, 3);
+        topDays.forEach((d, i) => {
+            const meta = [fmtDate(d.iso)];
+            const who = this.getContributionBreakdown([d.iso]);
+            if (who) meta.push(who);
+            addRecordRow(i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉', fmtVal(d.v), meta, d.iso, d.iso);
+        });
+
+        // Best week (Mon-start) and best month, each remembering its best day
+        // so the click lands somewhere meaningful.
+        const weekAgg = new Map<string, { sum: number; bestIso: string; bestV: number }>();
+        const monthAgg = new Map<string, { sum: number; bestIso: string; bestV: number }>();
+        days.forEach(({ iso, v }) => {
+            const wk = getWeekStartISO(iso);
+            const mo = iso.slice(0, 7);
+            const w = weekAgg.get(wk) || { sum: 0, bestIso: iso, bestV: 0 };
+            w.sum += v; if (v > w.bestV) { w.bestV = v; w.bestIso = iso; }
+            weekAgg.set(wk, w);
+            const m = monthAgg.get(mo) || { sum: 0, bestIso: iso, bestV: 0 };
+            m.sum += v; if (v > m.bestV) { m.bestV = v; m.bestIso = iso; }
+            monthAgg.set(mo, m);
+        });
+
+        const bestWeek = [...weekAgg.entries()].sort((a, b) => b[1].sum - a[1].sum)[0];
+        if (bestWeek) {
+            const [wk, agg] = bestWeek;
+            const spanDays = days.filter((d) => d.iso >= wk && d.iso <= this.shiftIso(wk, 6)).map((d) => d.iso);
+            const meta = [`${fmtDate(wk)} – ${fmtDate(this.shiftIso(wk, 6))}`];
+            const who = this.getContributionBreakdown(spanDays);
+            if (who) meta.push(who);
+            addRecordRow('📅', `${fmtVal(agg.sum)} in a week`, meta, agg.bestIso);
+        }
+
+        const bestMonth = [...monthAgg.entries()].sort((a, b) => b[1].sum - a[1].sum)[0];
+        if (bestMonth) {
+            const [mo, agg] = bestMonth;
+            const monthName = new Date(`${mo}-01T12:00:00`)
+                .toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+            const spanDays = days.filter((d) => d.iso.startsWith(mo)).map((d) => d.iso);
+            const meta = [monthName];
+            const who = this.getContributionBreakdown(spanDays);
+            if (who) meta.push(who);
+            addRecordRow('🗓', `${fmtVal(agg.sum)} in a month`, meta, agg.bestIso);
+        }
+    }
+
+    private shiftIso(iso: string, deltaDays: number): string {
+        const d = new Date(`${iso}T12:00:00`);
+        d.setDate(d.getDate() + deltaDays);
+        return this.toLocalISODate(d);
     }
 
     private renderCalendarDays(grid: HTMLElement) {
@@ -1352,11 +1620,14 @@ export class ToolView extends ItemView {
             ? null
             : this.statsBooks.find((b) => b.basic.uuid === this.statsSourceBookId) || null;
 
-        const getDayValue = (iso: string): number => {
-            const entry = book?.stats?.daily_progress?.[iso];
-            if (entry) return Math.max(0, entry.net_change || 0);
-            return Math.max(0, book?.stats?.daily_words?.[iso] || 0);
-        };
+        // Same day-value basis as the streak (incl. the count-editing option),
+        // so the quota list agrees with the streak about what "written" means.
+        const streakCountEditing = this.plugin.settings.bookView?.leftPanelInfo?.streakCountEditing === true;
+        const getDayValue = (iso: string): number => streakDayValue(
+            book?.stats?.daily_progress?.[iso],
+            book?.stats?.daily_words?.[iso] || 0,
+            streakCountEditing
+        );
 
         // Period coverage + how far back "all history" reaches.
         let periods: ReturnType<typeof normalizeStreakPeriods> | null = null;
@@ -2116,12 +2387,16 @@ export class ToolView extends ItemView {
             cls: 'book-smith-scene-notes-compact-btn',
             attr: { 'aria-label': 'Toggle compact view', title: 'Toggle compact view' }
         });
-        setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+        // Text glyph, not setIcon — see the navigator folder button note.
+        const compactGlyph = compactBtn.createSpan({
+            cls: 'book-smith-scene-notes-compact-glyph',
+            text: this.sceneNotesCompact ? '≡' : '☰'
+        });
         if (this.sceneNotesCompact) compactBtn.addClass('is-active');
         compactBtn.addEventListener('click', () => {
             this.sceneNotesCompact = !this.sceneNotesCompact;
             view.toggleClass('is-compact', this.sceneNotesCompact);
-            setIcon(compactBtn, this.sceneNotesCompact ? 'list' : 'align-justify');
+            compactGlyph.textContent = this.sceneNotesCompact ? '≡' : '☰';
             compactBtn.toggleClass('is-active', this.sceneNotesCompact);
         });
 
@@ -2171,11 +2446,15 @@ export class ToolView extends ItemView {
             const activeFilePath = activeFile?.extension === 'md' ? activeFile.path : null;
             const allEntries = this.plugin.sceneNotesManager.getAllLoadedNotes();
 
-            // Resolve the book that owns the active file.
+            // Resolve the book that owns the active file — either it lives under
+            // the book's own folder, or under the book's Navigator folder (so a
+            // linked file outside the project still shows the project's notes).
             let activeBookId: string | null = null;
             if (activeFilePath) {
+                const under = (base?: string) =>
+                    !!base && (activeFilePath === base || activeFilePath.startsWith(base + '/'));
                 const entry = allEntries.find(e =>
-                    activeFilePath === e.owner.folderPath || activeFilePath.startsWith(e.owner.folderPath + '/')
+                    under(e.owner.folderPath) || under(e.owner.navigatorFolder)
                 );
                 activeBookId = entry?.owner.uuid || null;
             }
@@ -2189,10 +2468,11 @@ export class ToolView extends ItemView {
             if (projectEntries.length > 0) {
                 orderedFiles = await this.getBookFileOrderCached(projectEntries[0].owner.folderPath);
             }
+            const locationLabels = await this.computeSceneNoteLocations(projectEntries, orderedFiles);
             if (this.sceneNotesContainer !== container) return;
 
             // Now do a sync rebuild — atomic empty+fill, no visible gap.
-            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId);
+            this.renderSceneNotesListSync(container, projectEntries, orderedFiles, activeBookId, locationLabels);
         })();
     }
 
@@ -2226,6 +2506,61 @@ export class ToolView extends ItemView {
         } catch {
             return [];
         }
+    }
+
+    /**
+     * Per-note location labels for the notes list. Default 'page' mode shows
+     * the estimated page IN THE WHOLE PROJECT: cumulative words of every file
+     * before this one in tree order, plus words above the anchor line in its
+     * own file, divided by words-per-page. 'line' mode shows the raw line.
+     * Reads go through cachedRead, so repeat renders are memory-cheap.
+     */
+    private async computeSceneNoteLocations(
+        entries: Array<{ owner: BookOwner; note: SceneNote }>,
+        orderedFiles: string[]
+    ): Promise<Map<string, string>> {
+        const labels = new Map<string, string>();
+        const lineLabel = (note: SceneNote) => `Line ${note.fromLine + 1}`;
+        const mode = this.plugin.settings.sceneNoteLocationDisplay === 'line' ? 'line' : 'page';
+        if (mode === 'line' || entries.length === 0) {
+            entries.forEach(({ note }) => labels.set(note.id, lineLabel(note)));
+            return labels;
+        }
+
+        const wordsPerPage = this.plugin.settings.stats?.wordsPerPage || 250;
+        const folderPath = entries[0].owner.folderPath;
+        const countWords = (text: string) => this.plugin.statsManager.countWords(text);
+
+        // Cumulative word offsets, file by file in tree order.
+        const offsets = new Map<string, number>();
+        const contents = new Map<string, string>();
+        let running = 0;
+        for (const rel of orderedFiles) {
+            const full = `${folderPath}/${rel}`;
+            offsets.set(full, running);
+            const f = this.app.vault.getAbstractFileByPath(full);
+            if (f instanceof TFile && f.extension === 'md') {
+                try {
+                    const content = await this.app.vault.cachedRead(f);
+                    contents.set(full, content);
+                    running += countWords(content);
+                } catch { /* unreadable file counts as 0 words */ }
+            }
+        }
+
+        for (const { note } of entries) {
+            const offset = offsets.get(note.filePath);
+            const content = contents.get(note.filePath);
+            if (offset === undefined || content === undefined) {
+                // File not in the tree order (edge case) — fall back to line.
+                labels.set(note.id, lineLabel(note));
+                continue;
+            }
+            const upToLine = content.split('\n').slice(0, note.fromLine + 1).join('\n');
+            const wordsBefore = offset + countWords(upToLine);
+            labels.set(note.id, `Page ${Math.floor(wordsBefore / wordsPerPage) + 1}`);
+        }
+        return labels;
     }
 
     /**
@@ -2264,7 +2599,8 @@ export class ToolView extends ItemView {
         container: HTMLElement,
         projectEntries: Array<{ owner: BookOwner; note: SceneNote }>,
         orderedFiles: string[],
-        activeBookId: string | null
+        activeBookId: string | null,
+        locationLabels: Map<string, string> = new Map()
     ): void {
         container.empty();
 
@@ -2320,26 +2656,32 @@ export class ToolView extends ItemView {
 
                     const body = row.createDiv({ cls: 'book-smith-scene-notes-row-body' });
 
-                    // Title row: real title or greyed-out content fallback.
+                    const locLabel = locationLabels.get(note.id) ?? `Line ${note.fromLine + 1}`;
+
+                    // Title row: real title or greyed-out content fallback, plus
+                    // a location chip that only shows in compact mode (where the
+                    // meta line below is hidden).
                     const noteTitle = note.title?.trim();
                     const hasTitle = !!noteTitle;
                     const titleEl = body.createDiv({ cls: 'book-smith-scene-notes-row-title' });
+                    const titleTextEl = titleEl.createSpan({ cls: 'book-smith-scene-notes-row-title-text' });
                     if (hasTitle) {
-                        titleEl.setText(noteTitle!);
+                        titleTextEl.setText(noteTitle!);
                     } else {
                         const fallback = (note.content || '').trim().split('\n')[0] || '(empty note)';
-                        titleEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
+                        titleTextEl.setText(fallback.length > 80 ? fallback.slice(0, 80) + '…' : fallback);
                         titleEl.addClass('is-placeholder');
                     }
+                    titleEl.createSpan({ cls: 'book-smith-scene-notes-row-loc', text: locLabel });
 
-                    // Meta: created date + anchor line.
+                    // Meta: created date + anchor location (page or line).
                     const createdDate = note.createdAt ? new Date(note.createdAt) : null;
                     const dateStr = createdDate
                         ? createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
                         : '';
                     body.createDiv({
                         cls: 'book-smith-scene-notes-row-meta',
-                        text: [dateStr, `Line ${note.fromLine + 1}`].filter(Boolean).join(' · ')
+                        text: [dateStr, locLabel].filter(Boolean).join(' · ')
                     });
 
                     row.dataset.noteId = note.id;
@@ -2389,6 +2731,12 @@ export class ToolView extends ItemView {
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
                 handle.removeClass('is-dragging');
+                // Persist the final height so the split survives view
+                // teardowns and app reloads (saved once per drag, not per move).
+                if (this.sceneNotesTextareaHeight !== null) {
+                    this.plugin.settings.sceneNotesEditorHeight = Math.round(this.sceneNotesTextareaHeight);
+                    void this.plugin.saveSettings();
+                }
             };
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
@@ -2580,7 +2928,19 @@ export class ToolView extends ItemView {
             await this.plugin.sceneNotesManager.updateNote(note.id, { title: val || undefined });
         });
 
-        editor.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+        const noteLabelRow = editor.createDiv({ cls: 'book-smith-scene-notes-note-label-row' });
+        noteLabelRow.createEl('div', { cls: 'book-smith-scene-notes-note-label', text: 'Note' });
+        const fontControls = noteLabelRow.createDiv({ cls: 'book-smith-scene-notes-font-controls' });
+        const fontMinusBtn = fontControls.createEl('button', {
+            cls: 'book-smith-scene-notes-font-btn',
+            text: '−',
+            attr: { type: 'button', 'aria-label': 'Smaller note text' }
+        });
+        const fontPlusBtn = fontControls.createEl('button', {
+            cls: 'book-smith-scene-notes-font-btn',
+            text: '+',
+            attr: { type: 'button', 'aria-label': 'Larger note text' }
+        });
 
         // The textarea is rendered with transparent text — the *visible* text
         // comes from the `mirror` div sitting in front of it (pointer-events
@@ -2598,13 +2958,37 @@ export class ToolView extends ItemView {
         textarea.value = note.content || '';
         // Apply any user-chosen height from the divider drag so switching notes
         // preserves the size; otherwise the CSS min-height (120px) defaults in.
-        if (this.sceneNotesTextareaHeight !== null) {
-            textarea.style.height = `${this.sceneNotesTextareaHeight}px`;
+        // Instance value (live drag) wins; otherwise the persisted setting from
+        // a previous session; otherwise the CSS min-height default.
+        const savedEditorHeight = this.sceneNotesTextareaHeight
+            ?? this.plugin.settings.sceneNotesEditorHeight
+            ?? null;
+        if (savedEditorHeight !== null) {
+            textarea.style.height = `${savedEditorHeight}px`;
         }
         const mirror = textareaWrap.createDiv({
             cls: 'book-smith-scene-notes-textarea-mirror',
             attr: { 'aria-hidden': 'true' }
         });
+
+        // Note-text size: one CSS variable on the wrap drives BOTH layers
+        // (textarea + mirror must stay in lockstep or the caret drifts from
+        // the visible text). The +/- buttons step the persisted em value.
+        const applyNoteFont = () => {
+            const em = this.plugin.settings.sceneNoteFontEm ?? 0.9;
+            textareaWrap.style.setProperty('--bs-scene-note-font', `${em}em`);
+        };
+        const stepNoteFont = async (delta: number) => {
+            const current = this.plugin.settings.sceneNoteFontEm ?? 0.9;
+            const next = Math.min(1.6, Math.max(0.6, Math.round((current + delta) * 10) / 10));
+            if (next === current) return;
+            this.plugin.settings.sceneNoteFontEm = next;
+            await this.plugin.saveSettings();
+            applyNoteFont();
+        };
+        fontMinusBtn.addEventListener('click', () => void stepNoteFont(-0.1));
+        fontPlusBtn.addEventListener('click', () => void stepNoteFont(0.1));
+        applyNoteFont();
 
         const escapeHtml = (s: string) =>
             s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

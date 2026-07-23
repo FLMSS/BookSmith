@@ -98,10 +98,10 @@ Options can remove comments, links, and frontmatter.
 
     // 统计文本
     TODAY_WORDS: 'Today',
-    TOTAL_WORDS: 'Total words',
+    TOTAL_WORDS: 'Total Words',
     CHAPTER_COMPLETION: 'Completion',
-    WRITING_DAYS: 'Writing days',
-    AVERAGE_DAILY_WORDS: 'Daily average',
+    WRITING_DAYS: 'Writing Days',
+    AVERAGE_DAILY_WORDS: 'Daily Average',
     WORD_UNIT: ' words',
     DAY_UNIT: ' days',
     TEN_THOUSAND: 'K',
@@ -113,8 +113,8 @@ Options can remove comments, links, and frontmatter.
 
 // 工具箱视图翻译
 const toolViewTranslation: ToolViewTranslation = {
-    WRITING_TOOLBOX: 'Writing Toolbox',
-    BACK_TO_TOOLBOX: 'Back to Toolbox',
+    WRITING_TOOLBOX: 'BookSmith+',
+    BACK_TO_TOOLBOX: 'Back to Menu',
     WRITING_STATS_CALENDAR: 'Stats',
     GLOBAL_STATS: 'Global Stats',
     SELECT_PROJECT: 'Select Project',

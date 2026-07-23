@@ -21,6 +21,10 @@ export interface BookOwner {
     uuid: string;
     folderPath: string;   // absolute vault path to the book's root folder
     title: string;
+    /** The book's Navigator folder (normalized, no leading/trailing slash), if
+     *  set. Files under it belong to this project for note-listing purposes
+     *  even when they live outside the book's own folder. */
+    navigatorFolder?: string;
 }
 
 /**
@@ -104,39 +108,73 @@ export class SceneNotesManager {
      * any book under the configured root.
      */
     async findBookForFile(filePath: string): Promise<BookOwner | null> {
-        const bookRoot = this.plugin.settings.defaultBookPath;
-        if (!bookRoot) return null;
-        if (!(filePath === bookRoot || filePath.startsWith(bookRoot + '/'))) return null;
-
+        // Cache first — covers both book-folder and navigator-folder matches.
         const cachedId = this.lookupCachedBookForPath(filePath);
         if (cachedId) {
             const owner = this.owners.get(cachedId);
             if (owner) return owner;
         }
 
-        const rel = filePath.slice(bookRoot.length + 1);
-        const parts = rel.split('/').filter(p => p.length > 0);
-        for (let i = parts.length; i >= 1; i--) {
-            const candidate = `${bookRoot}/${parts.slice(0, i).join('/')}`;
-            const configPath = `${candidate}/book-config.json`;
-            const configFile = this.app.vault.getAbstractFileByPath(configPath);
-            if (!(configFile instanceof TFile)) continue;
-            try {
-                const raw = await this.app.vault.read(configFile);
-                const book = JSON.parse(raw) as Book;
-                const owner: BookOwner = {
-                    uuid: book.basic.uuid,
-                    folderPath: candidate,
-                    title: book.basic.title
-                };
-                this.owners.set(owner.uuid, owner);
-                this.filePathToBookId.set(candidate, owner.uuid);
-                return owner;
-            } catch (err) {
-                console.warn('SceneNotes: failed to read book config at', configPath, err);
+        // 1. Files physically inside a project: walk up to book-config.json.
+        const bookRoot = this.plugin.settings.defaultBookPath;
+        if (bookRoot && (filePath === bookRoot || filePath.startsWith(bookRoot + '/'))) {
+            const rel = filePath.slice(bookRoot.length + 1);
+            const parts = rel.split('/').filter(p => p.length > 0);
+            for (let i = parts.length; i >= 1; i--) {
+                const candidate = `${bookRoot}/${parts.slice(0, i).join('/')}`;
+                const configPath = `${candidate}/book-config.json`;
+                const configFile = this.app.vault.getAbstractFileByPath(configPath);
+                if (!(configFile instanceof TFile)) continue;
+                try {
+                    const raw = await this.app.vault.read(configFile);
+                    const book = JSON.parse(raw) as Book;
+                    const nav = book.navigatorFolder?.trim();
+                    const owner: BookOwner = {
+                        uuid: book.basic.uuid,
+                        folderPath: candidate,
+                        title: book.basic.title,
+                        navigatorFolder: nav ? nav.replace(/^\/+|\/+$/g, '') : undefined
+                    };
+                    this.owners.set(owner.uuid, owner);
+                    this.filePathToBookId.set(candidate, owner.uuid);
+                    return owner;
+                } catch (err) {
+                    console.warn('SceneNotes: failed to read book config at', configPath, err);
+                }
             }
         }
-        return null;
+
+        // 2. Files in a project's Navigator folder (which may live anywhere in
+        //    the vault). Surface that project's notes even though the file
+        //    isn't under the book root.
+        return this.findBookByNavigatorFolder(filePath);
+    }
+
+    /** Resolve a file that sits inside some project's Navigator folder. */
+    private async findBookByNavigatorFolder(filePath: string): Promise<BookOwner | null> {
+        let best: { uuid: string; title: string; folderPath: string; nav: string } | null = null;
+        const locations = await this.plugin.bookManager.getBookLocations();
+        for (const loc of locations) {
+            const nav = loc.navigatorFolder;
+            if (!nav) continue;
+            if (filePath === nav || filePath.startsWith(nav + '/')) {
+                // Most specific (longest) navigator folder wins on overlap.
+                if (!best || nav.length > best.nav.length) {
+                    best = { uuid: loc.uuid, title: loc.title, folderPath: loc.folderPath, nav };
+                }
+            }
+        }
+        if (!best) return null;
+
+        const owner: BookOwner = {
+            uuid: best.uuid,
+            folderPath: best.folderPath,
+            title: best.title,
+            navigatorFolder: best.nav
+        };
+        this.owners.set(owner.uuid, owner);
+        this.filePathToBookId.set(best.nav, owner.uuid);
+        return owner;
     }
 
     private lookupCachedBookForPath(filePath: string): string | null {
@@ -771,6 +809,20 @@ export class SceneNotesManager {
             if (o.folderPath === folderPath) { owner = o; break; }
         }
         if (!owner) return;
+
+        // Reconcile the Navigator folder — if it changed, drop the stale
+        // "navigator folder → this book" path cache so old-folder files stop
+        // resolving here and new-folder files start.
+        try {
+            const cfg = JSON.parse(await this.app.vault.read(file)) as Book;
+            const nav = cfg.navigatorFolder?.trim();
+            const normalized = nav ? nav.replace(/^\/+|\/+$/g, '') : undefined;
+            if (normalized !== owner.navigatorFolder) {
+                if (owner.navigatorFolder) this.filePathToBookId.delete(owner.navigatorFolder);
+                owner.navigatorFolder = normalized;
+            }
+        } catch { /* ignore malformed config */ }
+
         if (!this.notesByBook.has(owner.uuid)) return;
 
         const previous = this.getCachedBookOrder(owner.uuid).slice();

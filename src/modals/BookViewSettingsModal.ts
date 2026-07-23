@@ -234,6 +234,19 @@ export class BookViewSettingsModal extends Modal {
             });
 
         new Setting(detail)
+            .setName('Streak counts editing')
+            .setDesc('When on, days where you added words count toward the streak even if deletions cancelled them out (aligned with Writing Days). Off: only net new words count. The writing-day threshold still applies either way.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(this.plugin.settings.bookView.leftPanelInfo.streakCountEditing === true)
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookView.leftPanelInfo.streakCountEditing = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        new Setting(detail)
             .addButton(btn => btn
                 .setButtonText('Reset to default order')
                 .setTooltip('Restore the original order and default visibility')
@@ -281,6 +294,21 @@ export class BookViewSettingsModal extends Modal {
         }
 
         const detail = section.createDiv({ cls: 'book-smith-book-view-settings-detail' });
+
+        new Setting(detail)
+            .setName('Anchor location display')
+            .setDesc('How a note\'s position is shown in the list: estimated page in the whole project (words-per-page based), or the raw line number in its file.')
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('page', 'Page (estimated)')
+                    .addOption('line', 'Line number');
+                dropdown.setValue(this.plugin.settings.sceneNoteLocationDisplay === 'line' ? 'line' : 'page')
+                    .onChange(async (value) => {
+                        this.plugin.settings.sceneNoteLocationDisplay = value === 'line' ? 'line' : 'page';
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
 
         new Setting(detail)
             .setName('Glow note in editor on click')
@@ -494,6 +522,58 @@ export class BookViewSettingsModal extends Modal {
 
         this.addWordsPerPageSetting(detail);
         this.addDailyRolloverSetting(detail);
+
+        new Setting(detail)
+            .setName('File sizes in chapter list')
+            .setDesc('Show each file\'s length right-aligned in the left pane, as estimated pages ("3.4 pages") or words ("820 words").')
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('off', 'Off')
+                    .addOption('pages', 'Pages')
+                    .addOption('words', 'Words');
+                const cur = this.plugin.settings.treeFileMetric;
+                dropdown.setValue(cur === 'pages' || cur === 'words' ? cur : 'off')
+                    .onChange(async (value) => {
+                        this.plugin.settings.treeFileMetric =
+                            value === 'pages' ? 'pages' : value === 'words' ? 'words' : 'off';
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        // Daily Average display options (moved out of the period cards — they
+        // configure the left-pane Daily Average stat, not the periods).
+        new Setting(detail)
+            .setName('Daily Average window')
+            .setDesc('How far back the left-pane Daily Average looks: the whole current writing period, or a rolling window. Applies in both words and pages mode.')
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption('0', 'Whole period')
+                    .addOption('7', 'Rolling 7 days')
+                    .addOption('14', 'Rolling 14 days')
+                    .addOption('30', 'Rolling 30 days')
+                    .addOption('90', 'Rolling 90 days');
+                const current = this.plugin.settings.stats?.dailyAverageWindowDays;
+                dropdown.setValue(String(this.normalizeAverageWindowDays(current ?? 0)))
+                    .onChange(async (value) => {
+                        this.plugin.settings.stats.dailyAverageWindowDays = this.normalizeAverageWindowDays(Number(value));
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
+
+        new Setting(detail)
+            .setName('Count missed scheduled days as zero')
+            .setDesc('When on, days you were scheduled to write but didn\'t drag the Daily Average down as zeros. When off, only days you actually wrote count.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(this.plugin.settings.stats?.dailyAverageCountMissedAsZero ?? true)
+                    .onChange(async (value) => {
+                        this.plugin.settings.stats.dailyAverageCountMissedAsZero = value;
+                        await this.plugin.saveSettings();
+                        this.onSettingsChanged();
+                    });
+            });
 
         // Statistics-pane list/timeline preferences (moved here from the
         // Obsidian settings tab).
@@ -975,34 +1055,9 @@ export class BookViewSettingsModal extends Modal {
                     });
             });
 
-        new Setting(card)
-            .setName('Count missed scheduled days as zero')
-            .addToggle((toggle) => {
-                toggle
-                    .setValue(period.average_missed_scheduled_days)
-                    .onChange(async (value) => {
-                        await this.updateWritingPeriod(period.id, {
-                            average_missed_scheduled_days: value
-                        });
-                    });
-            });
-
-        new Setting(card)
-            .setName('Average window')
-            .addDropdown((dropdown) => {
-                dropdown
-                    .addOption('0', 'All time')
-                    .addOption('7', 'Rolling 7 days')
-                    .addOption('14', 'Rolling 14 days')
-                    .addOption('30', 'Rolling 30 days')
-                    .addOption('90', 'Rolling 90 days')
-                    .setValue(String(period.average_window_days))
-                    .onChange(async (value) => {
-                        await this.updateWritingPeriod(period.id, {
-                            average_window_days: this.normalizeAverageWindowDays(Number(value))
-                        });
-                    });
-            });
+        // NB: the Daily Average window / missed-as-zero options used to live
+        // here, but they're display preferences for one left-pane stat, not
+        // period properties — they now live in "Counting & Display".
 
         // Read-only history line: how this period actually went.
         const summary = this.getPeriodPerformanceSummary(period);

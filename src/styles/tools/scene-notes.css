@@ -231,16 +231,22 @@
     justify-content: center;
     transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
+.book-smith-scene-notes-compact-glyph {
+    font-size: 15px;
+    line-height: 1;
+}
+/* The compact-state glyph (≡, U+2261) is a math symbol that sits on the math
+   baseline — visually lower in the box than the ☰ trigram shown in normal
+   mode. Nudge it up so both states read as centered. */
+.book-smith-scene-notes-compact-btn.is-active .book-smith-scene-notes-compact-glyph {
+    transform: translateY(-1.5px);
+}
 .book-smith-scene-notes-compact-btn:hover {
     color: var(--text-normal);
     background-color: var(--background-modifier-hover);
 }
-.book-smith-scene-notes-compact-btn.is-active {
-    color: var(--text-normal);
-    border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
-    background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 20%, transparent) inset;
-}
+/* No accent tint for the active (compact) state — the swapped glyph (☰ vs ≡)
+   is the state indicator; the button chrome stays identical to normal. */
 
 /* Compact mode — tighter rows, no meta line, no file group titles */
 .book-smith-scene-notes-view.is-compact .book-smith-scene-notes-group-title {
@@ -338,12 +344,32 @@
     min-width: 0;
 }
 .book-smith-scene-notes-row-title {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
     font-size: 0.9em;
     font-weight: 500;
+    color: var(--text-normal);
+}
+.book-smith-scene-notes-row-title-text {
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--text-normal);
+}
+/* Location chip (Page N / Line N): only shown in compact mode, where the
+   meta line that normally carries it is hidden. Same grey as the meta. */
+.book-smith-scene-notes-row-loc {
+    display: none;
+    flex: 0 0 auto;
+    font-size: 0.78em;
+    font-weight: 400;
+    font-style: normal;
+    color: var(--text-muted);
+}
+.book-smith-scene-notes-view.is-compact .book-smith-scene-notes-row-loc {
+    display: inline;
 }
 .book-smith-scene-notes-row-title.is-placeholder {
     color: var(--text-muted);
@@ -445,13 +471,43 @@
     font-weight: 400;
 }
 /* "Note" label above textarea */
+.book-smith-scene-notes-note-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 2px;
+}
 .book-smith-scene-notes-note-label {
     font-size: 0.75em;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-muted);
-    margin-top: 2px;
+}
+/* Tiny +/- controls for the note-text size, right of the label. */
+.book-smith-scene-notes-font-controls {
+    display: inline-flex;
+    gap: 4px;
+}
+.book-smith-scene-notes-font-btn {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.book-smith-scene-notes-font-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
 }
 .book-smith-scene-notes-delete-btn {
     background: transparent;
@@ -523,7 +579,9 @@
     background-color: var(--background-primary);
     color: var(--text-normal);
     font-family: var(--font-interface);
-    font-size: 0.9em;
+    /* Sized via variable so the +/- controls can adjust it; the mirror layer
+       MUST use the same value or the caret drifts from the visible text. */
+    font-size: var(--bs-scene-note-font, 0.9em);
     line-height: 1.4;
 }
 .book-smith-scene-notes-editor-textarea:focus {
@@ -581,7 +639,7 @@
     border-radius: 6px;
     /* Match textarea typography. */
     font-family: var(--font-interface);
-    font-size: 0.9em;
+    font-size: var(--bs-scene-note-font, 0.9em);
     line-height: 1.4;
     /* Match textarea wrapping. */
     white-space: pre-wrap;

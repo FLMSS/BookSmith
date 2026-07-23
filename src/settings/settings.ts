@@ -44,6 +44,34 @@ export interface BookSmithSettings {
      */
     sceneNoteGlowMatchColor?: boolean;
 
+    /**
+     * Font size of the scene-note editor textarea, in em (relative to the
+     * interface font). Adjusted with the +/- buttons next to the Note label.
+     * Clamped 0.6–1.6; default 0.9.
+     */
+    sceneNoteFontEm?: number;
+
+    /**
+     * User-chosen height (px) of the scene-note editor textarea, set by
+     * dragging the divider between the note list and the editor. Persisted so
+     * the split survives reloads; unset = CSS default (min-height 120px).
+     */
+    sceneNotesEditorHeight?: number;
+
+    /**
+     * How a scene note's anchor location is shown in the notes list:
+     * 'page' (default) = estimated page in the whole project (cumulative words
+     * of preceding files in tree order + words above the anchor line, divided
+     * by words-per-page); 'line' = raw line number in the file.
+     */
+    sceneNoteLocationDisplay?: 'line' | 'page';
+
+    /**
+     * Per-file size shown right-aligned in the left-pane chapter tree:
+     * estimated pages ("3.4 pages") or words ("820 words"). Default off.
+     */
+    treeFileMetric?: 'off' | 'pages' | 'words';
+
     // 模板配置
     templates: {
         default: string;
@@ -95,6 +123,14 @@ export interface BookSmithSettings {
         /** Day-period layout: 'calendar' or 'list'. ('quota'/'timeline' are
          *  legacy values, now expressed as list + the two flags below.) */
         dailyView?: 'calendar' | 'list' | 'quota' | 'timeline';
+        /** Window for the left-pane Daily Average: 0 = whole current period,
+         *  or a rolling 7/14/30/90 days. Display option (not per-period);
+         *  undefined falls back to any window stored on the period (legacy). */
+        dailyAverageWindowDays?: number;
+        /** Whether the Daily Average counts scheduled-but-missed days as zeros
+         *  in the denominator. Display option; undefined falls back to the
+         *  period's stored value (legacy). */
+        dailyAverageCountMissedAsZero?: boolean;
         /** List: infinite scroll across all history (vs. the visible month). */
         listInfinite?: boolean;
         /** List: show only quota days (written + one zero row per missed slot). */
@@ -125,6 +161,10 @@ export interface BookSmithSettings {
             streak: boolean;
             /** How the streak stat renders: kept weeks, or writing days in the chain. */
             streakUnit?: 'weeks' | 'days';
+            /** When true, editing days (words added but deletions cancelled
+             *  them out) count toward the streak, aligned with Writing Days.
+             *  Default off: only net new words count. */
+            streakCountEditing?: boolean;
             /** Display order of the stat rows (keys from LEFT_PANE_STAT_KEYS). */
             order: string[];
         };
@@ -162,7 +202,7 @@ export const LEFT_PANE_STAT_DEFAULT_VISIBLE: Record<LeftPaneStatKey, boolean> = 
 /** Short labels for the settings list / reorder UI. */
 export const LEFT_PANE_STAT_LABEL: Record<LeftPaneStatKey, string> = {
     today: 'Today value',
-    currentFile: 'Current file value',
+    currentFile: 'Current Scene value',
     total: 'Total value',
     completion: 'Completion',
     streak: 'Writing streak',
@@ -200,6 +240,9 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
     sceneNoteGlowOnClick: true,
     sceneNoteGlowFullRow: true,
     sceneNoteGlowMatchColor: false,
+    sceneNoteFontEm: 0.9,
+    sceneNoteLocationDisplay: 'page',
+    treeFileMetric: 'off',
     templates: {
         default: 'prose',
         custom: {
@@ -255,6 +298,7 @@ export const DEFAULT_SETTINGS: BookSmithSettings = {
             currentFile: true,
             streak: true,
             streakUnit: 'weeks',
+            streakCountEditing: false,
             order: [...LEFT_PANE_STAT_KEYS]
         }
     }

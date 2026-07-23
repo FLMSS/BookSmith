@@ -11,18 +11,30 @@ import { NamePromptModal } from '../modals/NamePromptModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { i18n } from '../i18n/i18n';
 
+/** Provider for the optional right-aligned per-file size in the tree. */
+export interface TreePageNumbersProvider {
+    mode: () => 'off' | 'pages' | 'words';
+    wordsPerPage: () => number;
+    countWords: (text: string) => number;
+}
+
 export class ChapterTree {
     // === 属性 ===
     private draggedNode: ChapterNode | null = null;
     private book: Book;
     private hoverTriggeredLinkPath: string | null = null;
+    /** File rows in render (tree) order, for the page-number pass. */
+    private fileRowsInOrder: Array<{ fullPath: string; header: HTMLElement }> = [];
+    /** Folder rows, annotated with the summed size of their contents. */
+    private folderRowsInOrder: Array<{ node: ChapterNode; header: HTMLElement }> = [];
 
     constructor(
         private container: HTMLElement,
         private app: App,
         private bookPath: string,
         private bookManager: BookManager,
-        private onDragComplete?: () => Promise<void>
+        private onDragComplete?: () => Promise<void>,
+        private pageNumbers?: TreePageNumbersProvider
     ) { }
 
     // === 核心渲染方法 ===
@@ -70,7 +82,68 @@ export class ChapterTree {
         });
 
         const list = this.container.createEl('ul', { cls: 'book-smith-tree-list' });
+        this.fileRowsInOrder = [];
+        this.folderRowsInOrder = [];
         this.book.structure.tree.forEach(node => this.renderNode(list, node));
+        void this.annotatePageNumbers();
+    }
+
+    /**
+     * Optional per-file size annotation: each file's own length as estimated
+     * pages ("3.4 pages") or words ("820 words"), appended as a right-aligned
+     * grey span. Runs async after render; cachedRead keeps repeat renders
+     * memory-cheap. No-op when the mode is 'off'.
+     */
+    private async annotatePageNumbers(): Promise<void> {
+        const provider = this.pageNumbers;
+        const mode = provider?.mode() ?? 'off';
+        if (!provider || mode === 'off') return;
+        const wordsPerPage = Math.max(1, provider.wordsPerPage());
+
+        const formatLabel = (words: number): string => {
+            if (mode === 'words') {
+                return `${words.toLocaleString('en-US')} ${words === 1 ? 'word' : 'words'}`;
+            }
+            let pages = words / wordsPerPage;
+            // Anything written shows at least "0.1 pages" — "0 pages" is
+            // reserved for genuinely empty files, even if the math rounds down.
+            if (words > 0 && pages < 0.1) pages = 0.1;
+            const text = Number.isInteger(pages) ? String(pages) : pages.toFixed(1).replace(/\.0$/, '');
+            return `${text} ${text === '1' ? 'page' : 'pages'}`;
+        };
+
+        // Pass 1: per-file word counts.
+        const wordsByPath = new Map<string, number>();
+        for (const { fullPath, header } of this.fileRowsInOrder) {
+            // Guard: a re-render may have replaced the DOM mid-pass.
+            if (!header.isConnected) return;
+            const file = this.app.vault.getAbstractFileByPath(fullPath);
+            if (!(file instanceof TFile) || file.extension !== 'md') continue;
+            try {
+                wordsByPath.set(fullPath, provider.countWords(await this.app.vault.cachedRead(file)));
+            } catch { /* skip unreadable file */ }
+        }
+
+        // Pass 2: file rows.
+        for (const { fullPath, header } of this.fileRowsInOrder) {
+            if (!header.isConnected) return;
+            const words = wordsByPath.get(fullPath);
+            if (words === undefined) continue;
+            header.createSpan({ cls: 'book-smith-tree-page', text: formatLabel(words) });
+        }
+
+        // Pass 3: folder rows show the summed size of everything inside them
+        // (so collapsed folders still tell you how much they hold).
+        const sumNode = (node: ChapterNode): number => {
+            if (node.type === 'file') {
+                return wordsByPath.get(`${this.bookPath}/${node.path}`) ?? 0;
+            }
+            return (node.children || []).reduce((acc, child) => acc + sumNode(child), 0);
+        };
+        for (const { node, header } of this.folderRowsInOrder) {
+            if (!header.isConnected) return;
+            header.createSpan({ cls: 'book-smith-tree-page is-folder-sum', text: formatLabel(sumNode(node)) });
+        }
     }
     // === Disk-derived display reconciliation ===
     //
@@ -204,6 +277,13 @@ export class ChapterTree {
         this.setupNodeTitle(header, node);
         this.setupDragAndDrop(header, item, node);
         this.setupContextMenu(header, node);
+
+        // Collect rows in render order for the size-annotation pass.
+        if (node.type === 'file') {
+            this.fileRowsInOrder.push({ fullPath: `${this.bookPath}/${node.path}`, header });
+        } else if (node.type === 'group') {
+            this.folderRowsInOrder.push({ node, header });
+        }
 
         if (node.type === 'group' && node.children) {
             this.renderChildren(item, node.children, node);

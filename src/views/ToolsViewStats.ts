@@ -163,6 +163,7 @@ export class ToolsViewStats {
             this.view.statsSettingsOpen = nextOpen;
             if (nextOpen) {
                 this.view.statsPeriodSettingsOpen = false;
+                this.view.statsStreakBoardOpen = false;
             }
             this.view.redrawStatisticsView();
         });
@@ -179,6 +180,27 @@ export class ToolsViewStats {
             this.view.statsPeriodSettingsOpen = nextOpen;
             if (nextOpen) {
                 this.view.statsSettingsOpen = false;
+                this.view.statsStreakBoardOpen = false;
+            }
+            this.view.redrawStatisticsView();
+        });
+
+        const streakButton = header.createEl('button', {
+            cls: `book-smith-stats-streaks-btn${this.view.statsStreakBoardOpen ? ' is-active' : ''}`,
+            attr: { 'aria-label': 'Streaks' }
+        });
+        const streakSpan = document.createElement('span');
+        streakSpan.textContent = '🏆';
+        streakButton.appendChild(streakSpan);
+        streakButton.addEventListener('click', () => {
+            const nextOpen = !this.view.statsStreakBoardOpen;
+            this.view.statsStreakBoardOpen = nextOpen;
+            if (nextOpen) {
+                this.view.statsSettingsOpen = false;
+                this.view.statsPeriodSettingsOpen = false;
+                // Records make the most sense across everything first; the
+                // board has a one-click hop to the current project from there.
+                this.view.statsSourceBookId = 'global';
             }
             this.view.redrawStatisticsView();
         });
@@ -193,6 +215,16 @@ export class ToolsViewStats {
         }
         if (this.view.statsPeriodSettingsOpen) {
             this.view.renderStatsPeriodPanel(statsView);
+        }
+
+        // Streaks & Records takes over the whole stats body (no calendar /
+        // selected-day section); the source row stays so you can flip between
+        // projects and Global while browsing records. Clicking 🏆 again — or
+        // any record row — returns to the normal calendar view.
+        if (this.view.statsStreakBoardOpen) {
+            this.view.renderStatsSourceRow(statsView);
+            this.view.renderStreakBoardPanel(statsView);
+            return;
         }
 
         this.view.renderStatsSourceRow(statsView);
